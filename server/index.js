@@ -23,6 +23,20 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running" });
 });
 
+// Servir Frontend en Producción
+if (process.env.NODE_ENV === "production") {
+  const clientDistPath = path.join(__dirname, "../client/dist");
+  app.use(express.static(clientDistPath));
+
+  app.get("*", (req, res, next) => {
+    // Si la ruta empieza con /api, no servir index.html
+    if (req.path.startsWith("/api")) {
+      return next();
+    }
+    res.sendFile(path.join(clientDistPath, "index.html"));
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

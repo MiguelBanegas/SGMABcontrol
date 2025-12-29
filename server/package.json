@@ -5,6 +5,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon index.js",
+    "start": "node index.js",
+    "migrate:prod": "knex migrate:latest --env production",
+    "seed:prod": "knex seed:run --env production",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
