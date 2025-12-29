@@ -3,6 +3,9 @@ import { Row, Col, Card, Table, Badge, Tabs, Tab, Button, Modal } from 'react-bo
 import { BarChart3, TrendingUp, Users, Package, UserPlus, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import UserModal from './UserModal';
+import SalesHistory from './SalesHistory';
+import CtaCteManager from './CtaCteManager';
+import NotificationsCenter from './NotificationsCenter';
 import toast from 'react-hot-toast';
 
 const Admin = () => {
@@ -13,10 +16,15 @@ const Admin = () => {
   const [showUserModal, setShowUserModal] = useState(false);
   const [showLowStockModal, setShowLowStockModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [deleteId, setDeleteId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const fetchStats = async () => {
     try {
-      const res = await axios.get('/api/sales/stats');
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/sales/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setStats(res.data);
     } catch (err) {
       console.error(err);
@@ -25,7 +33,10 @@ const Admin = () => {
 
   const fetchProductStats = async () => {
     try {
-      const res = await axios.get('/api/products/stats');
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/products/stats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setProductStats(res.data);
     } catch (err) {
       console.error(err);
@@ -48,19 +59,25 @@ const Admin = () => {
     Promise.all([fetchStats(), fetchProductStats(), fetchUsers()]).finally(() => setLoading(false));
   }, []);
 
-  const handleDeleteUser = async (id) => {
-    if (window.confirm('¿Está seguro de eliminar este usuario?')) {
-      try {
-        const token = localStorage.getItem('token');
-        await axios.delete(`/api/users/${id}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        fetchUsers();
-        toast.success('Usuario eliminado correctamente');
-      } catch (err) {
-        toast.error('Error al eliminar usuario');
-      }
+  const confirmDelete = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`/api/users/${deleteId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchUsers();
+      toast.success('Usuario eliminado correctamente');
+    } catch (err) {
+      toast.error('Error al eliminar usuario');
+    } finally {
+      setShowDeleteModal(false);
+      setDeleteId(null);
     }
+  };
+
+  const handleDeleteUser = (id) => {
+    setDeleteId(id);
+    setShowDeleteModal(true);
   };
 
   return (
@@ -144,7 +161,7 @@ const Admin = () => {
           </Card>
         </Tab>
 
-        <Tab eventKey="users" title="Gestión de Usuarios">
+        <Tab eventKey="users" title="Usuarios">
           <Card className="border-0 shadow-sm mt-3">
             <Card.Header className="bg-white py-3 border-0 d-flex justify-content-between align-items-center">
               <h5 className="mb-0">Usuarios Registrados</h5>
@@ -186,6 +203,15 @@ const Admin = () => {
               </Table>
             </Card.Body>
           </Card>
+        </Tab>
+        <Tab eventKey="history" title="Historial Comercial">
+          <SalesHistory />
+        </Tab>
+        <Tab eventKey="ctacte" title="Cuentas Corrientes">
+          <CtaCteManager />
+        </Tab>
+        <Tab eventKey="notifications" title="Notificaciones">
+          <NotificationsCenter />
         </Tab>
       </Tabs>
 
@@ -234,6 +260,23 @@ const Admin = () => {
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowLowStockModal(false)}>Cerrar</Button>
         </Modal.Footer>
+      </Modal>
+
+      {/* Modal de Confirmación para Eliminar Usuario */}
+      <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered size="sm">
+        <Modal.Body className="text-center py-4">
+          <Trash2 size={40} className="text-danger mb-3 opacity-75" />
+          <h5 className="mb-2">¿Eliminar usuario?</h5>
+          <p className="text-muted small mb-0">Esta acción no se puede deshacer.</p>
+          <div className="d-flex justify-content-center gap-2 mt-4">
+            <Button variant="light" size="sm" className="px-3" onClick={() => setShowDeleteModal(false)}>
+              Cancelar
+            </Button>
+            <Button variant="danger" size="sm" className="px-3 shadow-sm" onClick={confirmDelete}>
+              Confirmar
+            </Button>
+          </div>
+        </Modal.Body>
       </Modal>
     </div>
   );

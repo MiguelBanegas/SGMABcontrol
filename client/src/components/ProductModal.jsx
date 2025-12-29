@@ -1,11 +1,16 @@
 import React, { useState, useRef } from 'react';
-import { Modal, Button, Form, Row, Col, Alert, InputGroup } from 'react-bootstrap';
-import { Camera, Upload, X } from 'lucide-react';
+import { Modal, Button, Form, Row, Col, Alert, InputGroup, Badge, ListGroup } from 'react-bootstrap';
+import { Camera, Upload, X, Plus, Trash2 } from 'lucide-react';
 import BarcodeScanner from './BarcodeScanner';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
-const ProductModal = ({ show, handleClose, refreshProducts, categories, editProduct }) => {
+const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, categories, editProduct, allProducts = [] }) => {
+  const [nameMatches, setNameMatches] = useState([]);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [skuMatch, setSkuMatch] = useState(null);
+  const [newCatName, setNewCatName] = useState('');
+  const [showCatManager, setShowCatManager] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -23,6 +28,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, categories, editProd
   const nameRef = useRef(null);
   const [showScanner, setShowScanner] = useState(false);
   const [error, setError] = useState('');
+  const skuRef = useRef(null);
 
   React.useEffect(() => {
     if (editProduct) {
@@ -41,6 +47,9 @@ const ProductModal = ({ show, handleClose, refreshProducts, categories, editProd
       setPreview(null);
       setImage(null);
     }
+    setNameMatches([]);
+    setSelectedIndex(0);
+    setSkuMatch(null);
   }, [editProduct, show]);
 
   React.useEffect(() => {
@@ -50,7 +59,76 @@ const ProductModal = ({ show, handleClose, refreshProducts, categories, editProd
   }, [show, editProduct]);
 
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    let { name, value } = e.target;
+    if (name === 'name') {
+      // Solo capitalizar si se está agregando texto al final (no editando en el medio)
+      const cursorPos = e.target.selectionStart;
+      const isAddingAtEnd = cursorPos === value.length;
+      
+      if (isAddingAtEnd && value.length > formData.name.length) {
+        // Solo capitalizar la última palabra agregada
+        const words = value.split(' ');
+        const lastWord = words[words.length - 1];
+        if (lastWord.length === 1) {
+          words[words.length - 1] = lastWord.toUpperCase();
+          value = words.join(' ');
+        }
+      }
+      
+      // Buscar coincidencias de nombre
+      if (value.length >= 3) {
+        const searchTerms = value.toLowerCase().split(' ').filter(t => t.length > 0);
+        const matches = allProducts.filter(p => {
+          if (p.id === editProduct?.id) return false;
+          const productName = p.name.toLowerCase();
+          // Debe contener todos los términos de búsqueda
+          return searchTerms.every(term => productName.includes(term));
+        }).slice(0, 5);
+        setNameMatches(matches);
+        setSelectedIndex(0);
+      } else {
+        setNameMatches([]);
+        setSelectedIndex(0);
+      }
+    }
+    
+    if (name === 'sku') {
+      const match = allProducts.find(p => p.sku === value && p.id !== editProduct?.id);
+      setSkuMatch(match || null);
+    }
+
+    setFormData({ ...formData, [name]: value });
+  };
+
+  const handleKeyDown = (e) => {
+    if (nameMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedIndex(prev => (prev + 1) % nameMatches.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedIndex(prev => (prev - 1 + nameMatches.length) % nameMatches.length);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        selectSimilarProduct(nameMatches[selectedIndex]);
+      } else if (e.key === 'Escape') {
+        setNameMatches([]);
+        setSelectedIndex(0);
+      }
+    }
+  };
+
+  const selectSimilarProduct = (product) => {
+    setFormData({
+      ...formData,
+      name: product.name,
+      description: product.description || '',
+      price_buy: product.price_buy || '',
+      price_sell: product.price_sell || '',
+      category_id: product.category_id || ''
+    });
+    setNameMatches([]); // Ocultar sugerencias
+    toast.success('Datos base cargados de ' + product.name);
   };
 
   const handleFileChange = (e) => {
@@ -120,15 +198,43 @@ const ProductModal = ({ show, handleClose, refreshProducts, categories, editProd
       }
       toast.success(editProduct ? 'Producto actualizado' : 'Producto creado');
       refreshProducts();
-      handleClose();
-      // Reset form si es nuevo
-      if (!editProduct) {
+      
+      if (editProduct) {
+        // Si es edición, cerrar el modal
+        handleClose();
+      } else {
+        // Si es nuevo, limpiar el formulario y mantener abierto
         setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '' });
         setImage(null);
         setPreview(null);
+        setError('');
+        // Enfocar el campo SKU para el siguiente producto
+        setTimeout(() => skuRef.current?.focus(), 100);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Error al guardar el producto');
+    }
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCatName.trim()) return;
+    try {
+      await axios.post('/api/products/categories', { name: newCatName });
+      setNewCatName('');
+      refreshCategories();
+      toast.success('Categoría creada');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al crear categoría');
+    }
+  };
+
+  const handleDeleteCategory = async (id) => {
+    try {
+      await axios.delete(`/api/products/categories/${id}`);
+      refreshCategories();
+      toast.success('Categoría eliminada');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al eliminar categoría');
     }
   };
 
@@ -143,26 +249,117 @@ const ProductModal = ({ show, handleClose, refreshProducts, categories, editProd
           <Row>
             <Col md={6}>
               <Form.Group className="mb-3">
-                <Form.Label>Nombre</Form.Label>
-                <Form.Control name="name" value={formData.name} onChange={handleInputChange} ref={nameRef} required />
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>Categoría</Form.Label>
-                <Form.Select name="category_id" value={formData.category_id} onChange={handleInputChange}>
-                  <option value="">Sin Categoría</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </Form.Select>
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>SKU / Código de Barras</Form.Label>
-                <InputGroup>
-                  <Form.Control name="sku" value={formData.sku} onChange={handleInputChange} required />
+                <Form.Label className="fw-bold">1. SKU / Código de Barras</Form.Label>
+                <InputGroup hasValidation>
+                  <Form.Control 
+                    name="sku" 
+                    value={formData.sku} 
+                    onChange={handleInputChange} 
+                    ref={skuRef}
+                    required 
+                    isInvalid={!!skuMatch}
+                    placeholder="Escanee o escriba el código..."
+                    autoFocus={!editProduct}
+                  />
                   <Button variant="outline-secondary" onClick={() => setShowScanner(true)}>
                     <Camera size={18} />
                   </Button>
+                  <Form.Control.Feedback type="invalid">
+                    {skuMatch && `Ya existe: ${skuMatch.name}`}
+                  </Form.Control.Feedback>
                 </InputGroup>
+                {skuMatch && (
+                  <Alert variant="warning" className="pt-1 pb-1 mt-1 mb-0 small border-0 bg-transparent text-danger p-0 fw-bold">
+                    ⚠️ Este código ya pertenece a "{skuMatch.name}"
+                  </Alert>
+                )}
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label className="fw-bold">2. Nombre del Producto</Form.Label>
+                <Form.Control 
+                  name="name" 
+                  value={formData.name} 
+                  onChange={handleInputChange} 
+                  onKeyDown={handleKeyDown}
+                  ref={nameRef} 
+                  required 
+                  placeholder="Ej: Jugo Clight Limonada"
+                />
+                {nameMatches.length > 0 && (
+                  <div className="position-relative">
+                    <ListGroup className="position-absolute w-100 shadow-sm z-index-1000 mt-1" style={{ zIndex: 1050 }}>
+                      {nameMatches.map((m, idx) => (
+                        <ListGroup.Item 
+                          key={m.id} 
+                          action 
+                          active={idx === selectedIndex}
+                          onClick={() => selectSimilarProduct(m)}
+                          className="d-flex justify-content-between align-items-center py-2"
+                        >
+                          <div>
+                            <div className="fw-bold small">{m.name}</div>
+                            <small className={idx === selectedIndex ? "text-white" : "text-muted"}>Precio: ${m.price_sell}</small>
+                          </div>
+                          <Badge bg={idx === selectedIndex ? "light" : "info"} text={idx === selectedIndex ? "dark" : "white"} pill className="small">Usar Base</Badge>
+                        </ListGroup.Item>
+                      ))}
+                    </ListGroup>
+                  </div>
+                )}
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <Form.Label className="mb-0 fw-bold">3. Categoría</Form.Label>
+                  <Button 
+                    variant="link" 
+                    size="sm" 
+                    className="p-0 text-decoration-none" 
+                    onClick={() => setShowCatManager(!showCatManager)}
+                  >
+                    {showCatManager ? 'Cerrar Gestor' : 'Gestionar Categorías'}
+                  </Button>
+                </div>
+                {showCatManager ? (
+                  <div className="bg-light p-2 rounded border mb-2">
+                    <InputGroup size="sm" className="mb-2">
+                      <Form.Control 
+                        placeholder="Nueva categoría..." 
+                        value={newCatName}
+                        onChange={(e) => setNewCatName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                      />
+                      <Button variant="success" onClick={handleAddCategory}>
+                        <Plus size={16} />
+                      </Button>
+                    </InputGroup>
+                    <div className="d-flex flex-wrap gap-1" style={{ maxHeight: '100px', overflowY: 'auto' }}>
+                      {categories.map(cat => (
+                        <Badge 
+                          key={cat.id} 
+                          bg="secondary" 
+                          className="d-flex align-items-center gap-1"
+                          style={{ cursor: 'default' }}
+                        >
+                          {cat.name}
+                          <X 
+                            size={12} 
+                            style={{ cursor: 'pointer' }} 
+                            onClick={() => handleDeleteCategory(cat.id)}
+                          />
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <Form.Select name="category_id" value={formData.category_id} onChange={handleInputChange}>
+                    <option value="">Sin Categoría</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </Form.Select>
+                )}
               </Form.Group>
               <Form.Group className="mb-3">
                 <Form.Label>Descripción</Form.Label>

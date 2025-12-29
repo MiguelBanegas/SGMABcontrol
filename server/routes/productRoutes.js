@@ -26,5 +26,7 @@ router.post("/", upload.single("image"), productController.createProduct);
 router.put("/:id", upload.single("image"), productController.updateProduct);
 router.delete("/:id", productController.deleteProduct);
 router.get("/categories", productController.getCategories);
+router.post("/categories", productController.createCategory);
+router.delete("/categories/:id", productController.deleteCategory);
 
 module.exports = router;

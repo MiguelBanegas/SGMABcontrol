@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge } from 'react-bootstrap';
-import { Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff } from 'lucide-react';
-import { db, syncCatalog } from '../db/localDb';
+import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal } from 'react-bootstrap';
+import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff } from 'lucide-react';
+import { db, syncCatalog, syncCustomers } from '../db/localDb';
 import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import toast from 'react-hot-toast';
 import socket from '../socket';
+import CustomerModal from './CustomerModal';
+import { User, UserPlus } from 'lucide-react';
 
 const Sales = () => {
   const [cart, setCart] = useState(() => {
@@ -18,6 +20,27 @@ const Sales = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const scanInputRef = useRef(null);
+  const [customers, setCustomers] = useState([]);
+  const [customerSearch, setCustomerSearch] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerResults, setCustomerResults] = useState([]);
+  const [customerSelectedIndex, setCustomerSelectedIndex] = useState(-1);
+  const [paymentMethod, setPaymentMethod] = useState('Efectivo');
+  const customerInputRef = useRef(null);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [noteMessage, setNoteMessage] = useState('');
+
+  // Refs para evitar clausuras obsoletas en el listener global de F10
+  const cartRef = useRef(cart);
+  const selectedCustomerRef = useRef(selectedCustomer);
+  const paymentMethodRef = useRef(paymentMethod);
+
+  useEffect(() => {
+    cartRef.current = cart;
+    selectedCustomerRef.current = selectedCustomer;
+    paymentMethodRef.current = paymentMethod;
+  }, [cart, selectedCustomer, paymentMethod]);
 
   useEffect(() => {
     const handleStatus = () => {
@@ -30,10 +53,20 @@ const Sales = () => {
     window.addEventListener('offline', handleStatus);
     
     if (navigator.onLine) {
-      syncOfflineSales(); // Intento inicial
+      syncOfflineSales();
       axios.get('/api/products')
         .then(res => syncCatalog(res.data))
         .catch(err => console.error('Error al sincronizar catálogo', err));
+      
+      const token = localStorage.getItem('token');
+      axios.get('/api/customers', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => {
+          setCustomers(res.data);
+          syncCustomers(res.data);
+        })
+        .catch(err => console.error('Error al sincronizar clientes', err));
     }
 
     // Escuchar actualizaciones en tiempo real
@@ -44,9 +77,19 @@ const Sales = () => {
         .catch(err => console.error('Error al re-sincronizar catálogo', err));
     });
 
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'F10') {
+        e.preventDefault();
+        handleCheckout();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+
     return () => {
       window.removeEventListener('online', handleStatus);
       window.removeEventListener('offline', handleStatus);
+      window.removeEventListener('keydown', handleGlobalKeyDown);
       socket.off('catalog_updated');
     };
   }, []);
@@ -117,27 +160,98 @@ const Sales = () => {
 
   const total = cart.reduce((sum, item) => sum + (item.price_sell * item.quantity), 0);
 
+  const handleCustomerSearch = async (term) => {
+    setCustomerSearch(term);
+    if (term.length > 0) {
+      const results = await db.customers
+        .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
+        .limit(5)
+        .toArray();
+      setCustomerResults(results);
+      setCustomerSelectedIndex(results.length > 0 ? 0 : -1);
+    } else {
+      setCustomerResults([]);
+      setCustomerSelectedIndex(-1);
+    }
+  };
+
+  const handleCustomerKeyDown = (e) => {
+    if (customerResults.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setCustomerSelectedIndex(prev => (prev < customerResults.length - 1 ? prev + 1 : prev));
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setCustomerSelectedIndex(prev => (prev > 0 ? prev - 1 : prev));
+      } else if (e.key === 'Enter' && customerSelectedIndex >= 0) {
+        e.preventDefault();
+        selectCustomer(customerResults[customerSelectedIndex]);
+      }
+    }
+  };
+
+  const selectCustomer = (customer) => {
+    setSelectedCustomer(customer);
+    setCustomerSearch('');
+    setCustomerResults([]);
+  };
+
   const handleCheckout = async () => {
+    // Usar valores de los refs para asegurar que el listener de F10 (que es una clausura) tenga los datos actuales
+    const currentCart = cartRef.current;
+    const currentCustomer = selectedCustomerRef.current;
+    const currentPaymentMethod = paymentMethodRef.current;
+    const currentTotal = currentCart.reduce((sum, item) => sum + (item.price_sell * item.quantity), 0);
+
+    if (currentCart.length === 0) return;
+
+    if (currentPaymentMethod === 'Cta Cte' && !currentCustomer) {
+      toast.error('Debe seleccionar un cliente para Cuenta Corriente');
+      customerInputRef.current?.focus();
+      return;
+    }
+
+    // Si no hay cliente y no es Cta Cte, avisar una vez si el foco no está en el buscador de clientes
+    if (!currentCustomer && document.activeElement !== customerInputRef.current) {
+      customerInputRef.current?.focus();
+      toast('¿Desea agregar un cliente? Presione F10 de nuevo para vender como Anónimo', { icon: '👤', duration: 4000 });
+      return;
+    }
+
     const saleData = {
       id: uuidv4(),
-      items: cart.map(item => ({
+      items: currentCart.map(item => ({
         product_id: item.id,
         quantity: item.quantity,
         price_unit: item.price_sell,
         subtotal: item.price_sell * item.quantity
       })),
-      total,
+      total: currentTotal,
+      customer_id: currentCustomer?.id || null,
+      payment_method: currentPaymentMethod,
       created_at: new Date().toISOString()
     };
 
     try {
       if (isOnline) {
-        await axios.post('/api/sales', saleData);
+        const token = localStorage.getItem('token');
+        await axios.post('/api/sales', saleData, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
       }
-      // En cualquier caso guardamos en local por seguridad/offline logic
+      
       await db.offlineSales.add({ ...saleData, status: isOnline ? 'synced' : 'pending' });
+      
       setCart([]);
+      setSelectedCustomer(null);
+      setPaymentMethod('Efectivo');
       localStorage.removeItem('pending_sale');
+      
+      // Hacer foco de nuevo en el buscador de productos para la siguiente venta
+      if (scanInputRef.current) {
+        scanInputRef.current.focus();
+      }
+
       toast.success('Venta realizada con éxito' + (isOnline ? '' : ' (Modo Offline)'), {
         duration: 4000,
         icon: '💰',
@@ -145,6 +259,22 @@ const Sales = () => {
     } catch (err) {
       console.error(err);
       toast.error('Error al procesar la venta');
+    }
+  };
+
+  const handleSendNote = async () => {
+    if (!noteMessage.trim()) return;
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('/api/notifications', { message: noteMessage }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      toast.success('Nota enviada al administrador');
+      setNoteMessage('');
+      setShowNoteModal(false);
+    } catch (err) {
+      console.error(err);
+      toast.error('Error al enviar la nota');
     }
   };
 
@@ -264,10 +394,75 @@ const Sales = () => {
               <span>Subtotal:</span>
               <span>${total.toFixed(2)}</span>
             </div>
+
+            {/* Selector de Cliente */}
+            <div className="mb-4">
+              <Form.Label className="small opacity-75">Cliente</Form.Label>
+              {selectedCustomer ? (
+                <div className="d-flex align-items-center justify-content-between bg-dark bg-opacity-50 p-2 rounded border border-secondary">
+                  <div className="d-flex align-items-center">
+                    <User size={18} className="me-2 text-info" />
+                    <span>{selectedCustomer.name}</span>
+                  </div>
+                  <Button variant="link" size="sm" className="text-danger p-0" onClick={() => setSelectedCustomer(null)}>Cambiar</Button>
+                </div>
+              ) : (
+                <div className="position-relative">
+                  <InputGroup size="sm">
+                    <InputGroup.Text className="bg-dark border-secondary text-white">
+                      <User size={16} />
+                    </InputGroup.Text>
+                    <Form.Control
+                      ref={customerInputRef}
+                      placeholder="Buscar cliente..."
+                      className="bg-dark border-secondary text-white"
+                      value={customerSearch}
+                      onChange={(e) => handleCustomerSearch(e.target.value)}
+                      onKeyDown={handleCustomerKeyDown}
+                    />
+                    <Button variant="outline-info" onClick={() => setShowCustomerModal(true)}>
+                      <UserPlus size={16} />
+                    </Button>
+                  </InputGroup>
+                  {customerResults.length > 0 && (
+                    <ListGroup className="position-absolute w-100 shadow-lg mt-1 border-secondary" style={{ zIndex: 1050, opacity: 1 }}>
+                      {customerResults.map((c, idx) => (
+                        <ListGroup.Item 
+                          key={c.id} 
+                          action 
+                          size="sm"
+                          className={`text-white border-secondary py-2 ${customerSelectedIndex === idx ? 'bg-primary' : 'bg-dark'}`}
+                          style={{ backgroundColor: customerSelectedIndex === idx ? '#0d6efd' : '#212529' }}
+                          onClick={() => selectCustomer(c)}
+                        >
+                          {c.name}
+                        </ListGroup.Item>
+                      ))}
+                    </ListGroup>
+                  )}
+                  {customerSearch.length > 0 && customerResults.length === 0 && !showCustomerModal && (
+                    <div className="x-small text-muted mt-1 text-center">Sin resultados.</div>
+                  )}
+                </div>
+              )}
+            </div>
             
-            <div className="d-flex justify-content-between h3 mb-5">
+            <div className="d-flex justify-content-between h3 mb-4">
               <span>TOTAL</span>
               <span className="text-info">${total.toFixed(2)}</span>
+            </div>
+
+            <div className="mb-4">
+              <Form.Label className="small opacity-75">Forma de Pago</Form.Label>
+              <Form.Select 
+                className="bg-dark border-secondary text-white border-2"
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value)}
+              >
+                <option value="Efectivo">💵 Efectivo</option>
+                <option value="MP">📱 Mercado Pago</option>
+                <option value="Cta Cte">💳 Cta. Cte.</option>
+              </Form.Select>
             </div>
 
             <Button 
@@ -277,11 +472,52 @@ const Sales = () => {
               disabled={cart.length === 0}
               onClick={handleCheckout}
             >
-              FINALIZAR VENTA (F12)
+              FINALIZAR VENTA (F10)
+            </Button>
+
+            <Button 
+              variant="outline-warning" 
+              className="w-100 mt-3 d-flex align-items-center justify-content-center gap-2"
+              onClick={() => setShowNoteModal(true)}
+            >
+              <MessageSquare size={18} /> Dejar Nota / Aviso
             </Button>
           </Card>
         </Col>
       </Row>
+
+      <Modal show={showNoteModal} onHide={() => setShowNoteModal(false)} centered>
+        <Modal.Header closeButton className="bg-dark text-white border-secondary">
+          <Modal.Title>Enviar Nota al Admin</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="bg-dark text-white">
+          <Form.Group>
+            <Form.Label>Mensaje / Faltante / Aviso</Form.Label>
+            <Form.Control 
+              as="textarea" 
+              rows={4} 
+              className="bg-dark border-secondary text-white"
+              value={noteMessage}
+              onChange={(e) => setNoteMessage(e.target.value)}
+              placeholder="Ej: Faltan rollos de ticket, El producto X no tiene stock..."
+            />
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer className="bg-dark border-secondary">
+          <Button variant="secondary" onClick={() => setShowNoteModal(false)}>Cancelar</Button>
+          <Button variant="warning" onClick={handleSendNote}>Enviar Aviso</Button>
+        </Modal.Footer>
+      </Modal>
+
+      <CustomerModal 
+        show={showCustomerModal} 
+        handleClose={() => setShowCustomerModal(false)}
+        onCustomerCreated={(c) => {
+          selectCustomer(c);
+          setCustomers([...customers, c]);
+          syncCustomers([...customers, c]);
+        }}
+      />
     </div>
   );
 };

@@ -49,7 +49,6 @@ exports.createProduct = async (req, res) => {
     const [id] = await db("products").insert(productData).returning("id");
     req.app.get("io").emit("catalog_updated");
     res.status(201).json({ id, message: "Producto creado con éxito" });
-    Kinder;
   } catch (error) {
     console.error("Error al crear producto:", error);
     if (error.code === "23505") {
@@ -105,11 +104,49 @@ exports.deleteProduct = async (req, res) => {
 
 exports.getCategories = async (req, res) => {
   try {
-    const categories = await db("categories").select("*");
+    const categories = await db("categories")
+      .select("*")
+      .orderBy("name", "asc");
     res.json(categories);
   } catch (error) {
     console.error("Error en getCategories:", error);
     res.status(500).json({ message: "Error al obtener categorías" });
+  }
+};
+
+exports.createCategory = async (req, res) => {
+  const { name } = req.body;
+  if (!name)
+    return res.status(400).json({ message: "El nombre es obligatorio" });
+
+  try {
+    const [id] = await db("categories").insert({ name }).returning("id");
+    res.status(201).json({ id, name, message: "Categoría creada con éxito" });
+  } catch (error) {
+    console.error("Error al crear categoría:", error);
+    res.status(500).json({ message: "Error al crear categoría" });
+  }
+};
+
+exports.deleteCategory = async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Verificar si hay productos usando esta categoría
+    const productsCount = await db("products")
+      .where({ category_id: id })
+      .count("id as count")
+      .first();
+    if (parseInt(productsCount.count) > 0) {
+      return res.status(400).json({
+        message: "No se puede eliminar una categoría que contiene productos",
+      });
+    }
+
+    await db("categories").where({ id }).del();
+    res.json({ message: "Categoría eliminada" });
+  } catch (error) {
+    console.error("Error en deleteCategory:", error);
+    res.status(500).json({ message: "Error al eliminar categoría" });
   }
 };
 

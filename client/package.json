@@ -12,6 +12,7 @@
   "dependencies": {
     "axios": "^1.13.2",
     "bootstrap": "^5.3.8",
+    "date-fns": "^4.1.0",
     "dexie": "^4.2.1",
     "html5-qrcode": "^2.3.8",
     "lucide-react": "^0.562.0",
@@ -20,6 +21,7 @@
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.11.0",
+    "react-to-print": "^3.2.0",
     "socket.io-client": "^4.8.3",
     "uuid": "^13.0.0"
   },

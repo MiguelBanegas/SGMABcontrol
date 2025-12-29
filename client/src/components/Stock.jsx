@@ -282,7 +282,9 @@ const Stock = () => {
         show={showModal} 
         handleClose={() => setShowModal(false)} 
         refreshProducts={() => { fetchProducts(); fetchTopSellers(); }}
+        refreshCategories={fetchCategories}
         categories={categories}
+        allProducts={products}
         editProduct={editingProduct}
       />
 

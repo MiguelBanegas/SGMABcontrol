@@ -5,6 +5,8 @@ const authRoutes = require("./routes/authRoutes");
 const productRoutes = require("./routes/productRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const userRoutes = require("./routes/userRoutes");
+const customerRoutes = require("./routes/customerRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 const path = require("path");
 
 const app = express();
@@ -18,13 +20,12 @@ const io = new Server(server, {
   },
 });
 
-const APP_VERSION = "1.1.1"; // Versión actual del sistema
+const APP_VERSION = "1.1.2"; // Versión actual del sistema
 app.set("io", io);
 app.set("version", APP_VERSION);
 
-const fs = require("fs");
 const PORT = process.env.PORT || 5051;
-
+const fs = require("fs");
 // Asegurar que la carpeta de subidas exista
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -40,7 +41,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/users", userRoutes);
-
+app.use("/api/customers", customerRoutes);
+app.use("/api/notifications", notificationRoutes);
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });

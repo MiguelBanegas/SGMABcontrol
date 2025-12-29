@@ -12,7 +12,10 @@ export const syncOfflineSales = async () => {
 
   for (const sale of offlineSales) {
     try {
-      await axios.post("/api/sales", sale);
+      const token = localStorage.getItem("token");
+      await axios.post("/api/sales", sale, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       await db.offlineSales.update(sale.id, { status: "synced" });
     } catch (err) {
       console.error("Error al sincronizar venta:", sale.id, err);
