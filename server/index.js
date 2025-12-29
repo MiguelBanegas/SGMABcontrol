@@ -8,6 +8,18 @@ const userRoutes = require("./routes/userRoutes");
 const path = require("path");
 
 const app = express();
+const http = require("http");
+const { Server } = require("socket.io");
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST", "PUT", "DELETE"],
+  },
+});
+
+app.set("io", io);
+
 const fs = require("fs");
 const PORT = process.env.PORT || 5051;
 
@@ -28,7 +40,7 @@ app.use("/api/sales", saleRoutes);
 app.use("/api/users", userRoutes);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "SGM Backend is running" });
+  res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });
 
 // Servir Frontend en Producción
@@ -45,6 +57,14 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-app.listen(PORT, () => {
+// Manejo de conexiones de Socket.io
+io.on("connection", (socket) => {
+  console.log("Nuevo cliente conectado:", socket.id);
+  socket.on("disconnect", () => {
+    console.log("Cliente desconectado:", socket.id);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

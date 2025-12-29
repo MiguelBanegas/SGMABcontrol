@@ -30,6 +30,8 @@ exports.createSale = async (req, res) => {
     }
 
     await trx.commit();
+    req.app.get("io").emit("catalog_updated");
+    req.app.get("io").emit("sales_updated");
     res.status(201).json({ message: "Venta registrada con éxito" });
   } catch (error) {
     await trx.rollback();

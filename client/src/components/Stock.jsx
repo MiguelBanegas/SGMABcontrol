@@ -4,6 +4,7 @@ import { Plus, Search, Package, Image as ImageIcon, TrendingUp, Camera } from 'l
 import axios from 'axios';
 import ProductModal from './ProductModal';
 import BarcodeScanner from './BarcodeScanner';
+import socket from '../socket';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
@@ -48,6 +49,17 @@ const Stock = () => {
     fetchProducts();
     fetchCategories();
     fetchTopSellers();
+
+    // Escuchar actualizaciones en tiempo real
+    socket.on('catalog_updated', () => {
+      console.log('Catálogo actualizado via Socket.io');
+      fetchProducts();
+      fetchTopSellers();
+    });
+
+    return () => {
+      socket.off('catalog_updated');
+    };
   }, []);
 
   const filteredProducts = searchTerm.length >= 3 

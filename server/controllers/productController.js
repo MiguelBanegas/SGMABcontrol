@@ -47,7 +47,9 @@ exports.createProduct = async (req, res) => {
 
   try {
     const [id] = await db("products").insert(productData).returning("id");
+    req.app.get("io").emit("catalog_updated");
     res.status(201).json({ id, message: "Producto creado con éxito" });
+    Kinder;
   } catch (error) {
     console.error("Error al crear producto:", error);
     if (error.code === "23505") {
@@ -81,6 +83,7 @@ exports.updateProduct = async (req, res) => {
 
   try {
     await db("products").where({ id }).update(updateData);
+    req.app.get("io").emit("catalog_updated");
     res.json({ message: "Producto actualizado con éxito" });
   } catch (error) {
     console.error("Error al actualizar producto:", error);
@@ -92,6 +95,7 @@ exports.deleteProduct = async (req, res) => {
   const { id } = req.params;
   try {
     await db("products").where({ id }).del();
+    req.app.get("io").emit("catalog_updated");
     res.json({ message: "Producto eliminado" });
   } catch (error) {
     console.error("Error en deleteProduct:", error);

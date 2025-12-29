@@ -6,6 +6,7 @@ import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import toast from 'react-hot-toast';
+import socket from '../socket';
 
 const Sales = () => {
   const [cart, setCart] = useState(() => {
@@ -35,9 +36,18 @@ const Sales = () => {
         .catch(err => console.error('Error al sincronizar catálogo', err));
     }
 
+    // Escuchar actualizaciones en tiempo real
+    socket.on('catalog_updated', () => {
+      console.log('Recibida notificación de catálogo actualizado');
+      axios.get('/api/products')
+        .then(res => syncCatalog(res.data))
+        .catch(err => console.error('Error al re-sincronizar catálogo', err));
+    });
+
     return () => {
       window.removeEventListener('online', handleStatus);
       window.removeEventListener('offline', handleStatus);
+      socket.off('catalog_updated');
     };
   }, []);
 
