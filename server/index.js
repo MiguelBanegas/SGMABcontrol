@@ -8,7 +8,15 @@ const userRoutes = require("./routes/userRoutes");
 const path = require("path");
 
 const app = express();
+const fs = require("fs");
 const PORT = process.env.PORT || 5051;
+
+// Asegurar que la carpeta de subidas exista
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+  console.log("Carpeta 'uploads' creada correctamente");
+}
 
 app.use(cors());
 app.use(express.json());
