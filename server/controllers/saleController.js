@@ -50,6 +50,7 @@ exports.getSalesStats = async (req, res) => {
       .limit(7);
     res.json(stats);
   } catch (error) {
+    console.error("Error en getSalesStats:", error);
     res.status(500).json({ message: "Error al obtener estadísticas" });
   }
 };

@@ -7,6 +7,7 @@ exports.getAllProducts = async (req, res) => {
       .select("products.*", "categories.name as category_name");
     res.json(products);
   } catch (error) {
+    console.error("Error en getAllProducts:", error);
     res.status(500).json({ message: "Error al obtener productos" });
   }
 };
@@ -19,6 +20,7 @@ exports.getProductBySku = async (req, res) => {
       return res.status(404).json({ message: "Producto no encontrado" });
     res.json(product);
   } catch (error) {
+    console.error("Error en getProductBySku:", error);
     res.status(500).json({ message: "Error al buscar el producto" });
   }
 };
@@ -92,6 +94,7 @@ exports.deleteProduct = async (req, res) => {
     await db("products").where({ id }).del();
     res.json({ message: "Producto eliminado" });
   } catch (error) {
+    console.error("Error en deleteProduct:", error);
     res.status(500).json({ message: "Error al eliminar producto" });
   }
 };
@@ -101,6 +104,7 @@ exports.getCategories = async (req, res) => {
     const categories = await db("categories").select("*");
     res.json(categories);
   } catch (error) {
+    console.error("Error en getCategories:", error);
     res.status(500).json({ message: "Error al obtener categorías" });
   }
 };
@@ -119,6 +123,7 @@ exports.getProductStats = async (req, res) => {
       lowStockProducts: lowStockProducts,
     });
   } catch (error) {
+    console.error("Error en getProductStats:", error);
     res
       .status(500)
       .json({ message: "Error al obtener estadísticas de productos" });

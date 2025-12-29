@@ -11,6 +11,7 @@ exports.getAllUsers = async (req, res) => {
     );
     res.json(users);
   } catch (error) {
+    console.error("Error en getAllUsers:", error);
     res.status(500).json({ message: "Error al obtener usuarios" });
   }
 };
@@ -28,6 +29,7 @@ exports.createUser = async (req, res) => {
       .returning("id");
     res.status(201).json({ id: userId, message: "Usuario creado con éxito" });
   } catch (error) {
+    console.error("Error en createUser:", error);
     if (error.code === "23505")
       return res.status(400).json({ message: "El usuario ya existe" });
     res.status(500).json({ message: "Error al crear usuario" });
@@ -46,6 +48,7 @@ exports.updateUser = async (req, res) => {
     await db("users").where({ id }).update(updateData);
     res.json({ message: "Usuario actualizado con éxito" });
   } catch (error) {
+    console.error("Error en updateUser:", error);
     res.status(500).json({ message: "Error al actualizar usuario" });
   }
 };
