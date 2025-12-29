@@ -18,7 +18,9 @@ const io = new Server(server, {
   },
 });
 
+const APP_VERSION = "1.1.1"; // Versión actual del sistema
 app.set("io", io);
+app.set("version", APP_VERSION);
 
 const fs = require("fs");
 const PORT = process.env.PORT || 5051;
@@ -60,6 +62,10 @@ if (process.env.NODE_ENV === "production") {
 // Manejo de conexiones de Socket.io
 io.on("connection", (socket) => {
   console.log("Nuevo cliente conectado:", socket.id);
+
+  // Enviar versión actual al cliente
+  socket.emit("version_check", APP_VERSION);
+
   socket.on("disconnect", () => {
     console.log("Cliente desconectado:", socket.id);
   });
