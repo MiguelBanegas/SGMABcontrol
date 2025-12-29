@@ -1,0 +1,157 @@
+const db = require("../db");
+
+exports.getAllProducts = async (req, res) => {
+  try {
+    const products = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .select("products.*", "categories.name as category_name");
+    res.json(products);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener productos" });
+  }
+};
+
+exports.getProductBySku = async (req, res) => {
+  const { sku } = req.params;
+  try {
+    const product = await db("products").where({ sku }).first();
+    if (!product)
+      return res.status(404).json({ message: "Producto no encontrado" });
+    res.json(product);
+  } catch (error) {
+    res.status(500).json({ message: "Error al buscar el producto" });
+  }
+};
+
+exports.createProduct = async (req, res) => {
+  const { name, description, sku, price_buy, price_sell, stock, category_id } =
+    req.body;
+  const image_url = req.file ? `/uploads/${req.file.filename}` : null;
+
+  // Sanitización de datos
+  const productData = {
+    name,
+    description: description || null,
+    sku,
+    price_buy: price_buy === "" ? null : parseFloat(price_buy),
+    price_sell: parseFloat(price_sell),
+    stock: stock === "" ? 0 : parseInt(stock),
+    category_id:
+      category_id === "" || category_id === "null"
+        ? null
+        : parseInt(category_id),
+    image_url,
+  };
+
+  try {
+    const [id] = await db("products").insert(productData).returning("id");
+    res.status(201).json({ id, message: "Producto creado con éxito" });
+  } catch (error) {
+    console.error("Error al crear producto:", error);
+    if (error.code === "23505") {
+      return res.status(400).json({ message: "El SKU ya existe" });
+    }
+    res.status(500).json({ message: "Error al crear producto" });
+  }
+};
+
+exports.updateProduct = async (req, res) => {
+  const { id } = req.params;
+  const { name, description, sku, price_buy, price_sell, stock, category_id } =
+    req.body;
+
+  const updateData = {
+    name,
+    description: description || null,
+    sku,
+    price_buy: price_buy === "" ? null : parseFloat(price_buy),
+    price_sell: parseFloat(price_sell),
+    stock: stock === "" ? 0 : parseInt(stock),
+    category_id:
+      category_id === "" || category_id === "null"
+        ? null
+        : parseInt(category_id),
+  };
+
+  if (req.file) {
+    updateData.image_url = `/uploads/${req.file.filename}`;
+  }
+
+  try {
+    await db("products").where({ id }).update(updateData);
+    res.json({ message: "Producto actualizado con éxito" });
+  } catch (error) {
+    console.error("Error al actualizar producto:", error);
+    res.status(500).json({ message: "Error al actualizar producto" });
+  }
+};
+
+exports.deleteProduct = async (req, res) => {
+  const { id } = req.params;
+  try {
+    await db("products").where({ id }).del();
+    res.json({ message: "Producto eliminado" });
+  } catch (error) {
+    res.status(500).json({ message: "Error al eliminar producto" });
+  }
+};
+
+exports.getCategories = async (req, res) => {
+  try {
+    const categories = await db("categories").select("*");
+    res.json(categories);
+  } catch (error) {
+    res.status(500).json({ message: "Error al obtener categorías" });
+  }
+};
+
+exports.getProductStats = async (req, res) => {
+  try {
+    const totalProducts = await db("products").count("id as count").first();
+    const lowStockProducts = await db("products")
+      .where("stock", "<", 5)
+      .select("id", "name", "sku", "stock")
+      .orderBy("stock", "asc");
+
+    res.json({
+      total: parseInt(totalProducts.count),
+      lowStock: lowStockProducts.length,
+      lowStockProducts: lowStockProducts,
+    });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error al obtener estadísticas de productos" });
+  }
+};
+
+exports.getTopSellers = async (req, res) => {
+  try {
+    const topSellers = await db("sale_items")
+      .select("product_id")
+      .sum("quantity as total_sold")
+      .groupBy("product_id")
+      .orderBy("total_sold", "desc")
+      .limit(20);
+
+    const productIds = topSellers.map((s) => s.product_id);
+
+    const products = await db("products")
+      .whereIn("products.id", productIds)
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .select("products.*", "categories.name as category_name");
+
+    // Mantener el orden de ventas
+    const sortedProducts = topSellers.map((s) => {
+      const p = products.find((prod) => prod.id === s.product_id);
+      return { ...p, total_sold: s.total_sold };
+    });
+
+    res.json(sortedProducts);
+  } catch (error) {
+    console.error(error);
+    res
+      .status(500)
+      .json({ message: "Error al obtener productos más vendidos" });
+  }
+};
