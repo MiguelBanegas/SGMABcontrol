@@ -28,7 +28,7 @@ if (process.env.NODE_ENV === "production") {
   const clientDistPath = path.join(__dirname, "../client/dist");
   app.use(express.static(clientDistPath));
 
-  app.get(":rest(.*)", (req, res, next) => {
+  app.get(/.*/, (req, res, next) => {
     // Si la ruta empieza con /api, no servir index.html
     if (req.path.startsWith("/api")) {
       return next();
