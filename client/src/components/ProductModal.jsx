@@ -18,7 +18,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     price_buy: '',
     price_sell: '',
     stock: '',
-    category_id: ''
+    category_id: '',
+    sell_by_weight: false
   });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -39,11 +40,12 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         price_buy: editProduct.price_buy || '',
         price_sell: editProduct.price_sell || '',
         stock: editProduct.stock || '',
-        category_id: editProduct.category_id || ''
+        category_id: editProduct.category_id || '',
+        sell_by_weight: !!editProduct.sell_by_weight
       });
       setPreview(editProduct.image_url ? `${editProduct.image_url}` : null);
     } else {
-      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '' });
+      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false });
       setPreview(null);
       setImage(null);
     }
@@ -95,6 +97,10 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     if (name === 'sku') {
       const match = allProducts.find(p => p.sku === value && p.id !== editProduct?.id);
       setSkuMatch(match || null);
+    }
+
+    if (e.target.type === 'checkbox') {
+      value = e.target.checked;
     }
 
     setFormData({ ...formData, [name]: value });
@@ -204,7 +210,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         handleClose();
       } else {
         // Si es nuevo, limpiar el formulario y mantener abierto
-        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '' });
+        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false });
         setImage(null);
         setPreview(null);
         setError('');
@@ -399,7 +405,22 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
               </Row>
               <Form.Group className="mb-3">
                 <Form.Label>{editProduct ? 'Stock Actual' : 'Stock Inicial'}</Form.Label>
-                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} required />
+                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="0.001" required />
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Check 
+                  type="switch"
+                  id="sell-by-weight-switch"
+                  label="Se vende por peso (Kg, gramos, etc.)"
+                  name="sell_by_weight"
+                  checked={formData.sell_by_weight}
+                  onChange={handleInputChange}
+                  className="fw-bold text-primary"
+                />
+                <Form.Text className="text-muted">
+                  Habilitar esto para que el sistema solicite el peso al vender este producto.
+                </Form.Text>
               </Form.Group>
             </Col>
             <Col md={6}>

@@ -30,17 +30,23 @@ const Sales = () => {
   const customerInputRef = useRef(null);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [noteMessage, setNoteMessage] = useState('');
+  const [showWeightModal, setShowWeightModal] = useState(false);
+  const [currentWeightProduct, setCurrentWeightProduct] = useState(null);
+  const [inputWeight, setInputWeight] = useState('');
+  const weightInputRef = useRef(null);
 
   // Refs para evitar clausuras obsoletas en el listener global de F10
   const cartRef = useRef(cart);
   const selectedCustomerRef = useRef(selectedCustomer);
   const paymentMethodRef = useRef(paymentMethod);
+  const customersRef = useRef(customers);
 
   useEffect(() => {
     cartRef.current = cart;
     selectedCustomerRef.current = selectedCustomer;
     paymentMethodRef.current = paymentMethod;
-  }, [cart, selectedCustomer, paymentMethod]);
+    customersRef.current = customers;
+  }, [cart, selectedCustomer, paymentMethod, customers]);
 
   useEffect(() => {
     const handleStatus = () => {
@@ -65,6 +71,14 @@ const Sales = () => {
         .then(res => {
           setCustomers(res.data);
           syncCustomers(res.data);
+          
+          // Setear Consumidor Final por defecto si no hay uno seleccionado
+          if (!selectedCustomerRef.current) {
+            const defaultCustomer = res.data.find(c => c.name.toLowerCase().includes('cons. final'));
+            if (defaultCustomer) {
+              setSelectedCustomer(defaultCustomer);
+            }
+          }
         })
         .catch(err => console.error('Error al sincronizar clientes', err));
     }
@@ -115,6 +129,17 @@ const Sales = () => {
   };
 
   const addToCart = (product) => {
+    if (product.sell_by_weight) {
+      setCurrentWeightProduct(product);
+      setInputWeight('');
+      setShowWeightModal(true);
+      setSearchTerm('');
+      setSearchResults([]);
+      setSelectedIndex(-1);
+      // El foco se hará en el modal mediante useEffect o onEntered
+      return;
+    }
+
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
       setCart(cart.map(item => 
@@ -126,6 +151,31 @@ const Sales = () => {
     setSearchTerm('');
     setSearchResults([]);
     setSelectedIndex(-1);
+    scanInputRef.current?.focus();
+  };
+
+  const handleWeightSubmit = (e) => {
+    e.preventDefault();
+    const weight = parseFloat(inputWeight);
+    if (isNaN(weight) || weight <= 0) {
+      toast.error('Ingrese un peso válido');
+      return;
+    }
+
+    const product = currentWeightProduct;
+    const existing = cart.find(item => item.id === product.id);
+    
+    if (existing) {
+      setCart(cart.map(item => 
+        item.id === product.id ? { ...item, quantity: item.quantity + weight } : item
+      ));
+    } else {
+      setCart([...cart, { ...product, quantity: weight }]);
+    }
+
+    setShowWeightModal(false);
+    setCurrentWeightProduct(null);
+    setInputWeight('');
     scanInputRef.current?.focus();
   };
 
@@ -243,7 +293,11 @@ const Sales = () => {
       await db.offlineSales.add({ ...saleData, status: isOnline ? 'synced' : 'pending' });
       
       setCart([]);
-      setSelectedCustomer(null);
+      
+      // Intentar resetear al cliente Cons. Final por defecto usando el ref más actualizado
+      const defaultCustomer = customersRef.current.find(c => c.name.toLowerCase().includes('cons. final'));
+      setSelectedCustomer(defaultCustomer || null);
+      
       setPaymentMethod('Efectivo');
       localStorage.removeItem('pending_sale');
       
@@ -346,9 +400,22 @@ const Sales = () => {
                         </td>
                         <td className="text-center">
                           <div className="d-flex align-items-center justify-content-center gap-2">
-                            <Button variant="light" size="sm" onClick={() => updateQuantity(item.id, -1)}><Minus size={14} /></Button>
-                            <span className="fw-bold" style={{ width: '30px' }}>{item.quantity}</span>
-                            <Button variant="light" size="sm" onClick={() => updateQuantity(item.id, 1)}><Plus size={14} /></Button>
+                            {!item.sell_by_weight && (
+                              <Button variant="light" size="sm" onClick={() => updateQuantity(item.id, -1)}><Minus size={14} /></Button>
+                            )}
+                            <span className="fw-bold" style={{ width: item.sell_by_weight ? 'auto' : '30px' }}>
+                              {item.sell_by_weight ? `${parseFloat(item.quantity).toFixed(3)} Kg` : item.quantity}
+                            </span>
+                            {!item.sell_by_weight && (
+                              <Button variant="light" size="sm" onClick={() => updateQuantity(item.id, 1)}><Plus size={14} /></Button>
+                            )}
+                            {item.sell_by_weight && (
+                                <Button variant="light" size="sm" onClick={() => {
+                                    setCurrentWeightProduct(item);
+                                    setInputWeight('');
+                                    setShowWeightModal(true);
+                                }}><Plus size={14} /></Button>
+                            )}
                           </div>
                         </td>
                         <td className="text-end">${item.price_sell}</td>
@@ -457,7 +524,14 @@ const Sales = () => {
               <Form.Select 
                 className="bg-dark border-secondary text-white border-2"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value)}
+                onChange={(e) => {
+                  const newMethod = e.target.value;
+                  if (newMethod === 'Cta Cte' && selectedCustomer?.name?.toLowerCase().includes('cons. final')) {
+                    toast.error('No se permite Cuenta Corriente para Consumidor Final');
+                    return;
+                  }
+                  setPaymentMethod(newMethod);
+                }}
               >
                 <option value="Efectivo">💵 Efectivo</option>
                 <option value="MP">📱 Mercado Pago</option>
@@ -518,6 +592,49 @@ const Sales = () => {
           syncCustomers([...customers, c]);
         }}
       />
+
+      <Modal 
+        show={showWeightModal} 
+        onHide={() => setShowWeightModal(false)} 
+        centered
+        onEntered={() => weightInputRef.current?.focus()}
+      >
+        <Modal.Header closeButton className="bg-primary text-white">
+          <Modal.Title>Ingresar Peso</Modal.Title>
+        </Modal.Header>
+        <Form onSubmit={handleWeightSubmit}>
+          <Modal.Body>
+            <div className="text-center mb-4">
+               <h4 className="text-dark">{currentWeightProduct?.name}</h4>
+               <div className="text-muted">Precio por Kg: ${currentWeightProduct?.price_sell}</div>
+            </div>
+            <Form.Group>
+              <Form.Label className="fw-bold">Peso (Kg)</Form.Label>
+              <InputGroup size="lg">
+                <Form.Control 
+                  ref={weightInputRef}
+                  type="number" 
+                  step="0.001"
+                  placeholder="0.000"
+                  value={inputWeight}
+                  onChange={(e) => setInputWeight(e.target.value)}
+                  required
+                />
+                <InputGroup.Text>Kg</InputGroup.Text>
+              </InputGroup>
+              {inputWeight && !isNaN(parseFloat(inputWeight)) && (
+                <div className="mt-3 text-center h3 text-primary">
+                  Total: ${(parseFloat(inputWeight) * parseFloat(currentWeightProduct?.price_sell || 0)).toFixed(2)}
+                </div>
+              )}
+            </Form.Group>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowWeightModal(false)}>Cancelar</Button>
+            <Button variant="primary" type="submit">Agregar al Carrito</Button>
+          </Modal.Footer>
+        </Form>
+      </Modal>
     </div>
   );
 };

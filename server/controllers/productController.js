@@ -37,7 +37,9 @@ exports.createProduct = async (req, res) => {
     sku,
     price_buy: price_buy === "" ? null : parseFloat(price_buy),
     price_sell: parseFloat(price_sell),
-    stock: stock === "" ? 0 : parseInt(stock),
+    stock: stock === "" ? 0 : parseFloat(stock),
+    sell_by_weight:
+      req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
     category_id:
       category_id === "" || category_id === "null"
         ? null
@@ -60,16 +62,15 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { name, description, sku, price_buy, price_sell, stock, category_id } =
-    req.body;
-
   const updateData = {
     name,
     description: description || null,
     sku,
     price_buy: price_buy === "" ? null : parseFloat(price_buy),
     price_sell: parseFloat(price_sell),
-    stock: stock === "" ? 0 : parseInt(stock),
+    stock: stock === "" ? 0 : parseFloat(stock),
+    sell_by_weight:
+      req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
     category_id:
       category_id === "" || category_id === "null"
         ? null

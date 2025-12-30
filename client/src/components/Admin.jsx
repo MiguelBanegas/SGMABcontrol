@@ -6,6 +6,7 @@ import UserModal from './UserModal';
 import SalesHistory from './SalesHistory';
 import CtaCteManager from './CtaCteManager';
 import NotificationsCenter from './NotificationsCenter';
+import socket from '../socket';
 import toast from 'react-hot-toast';
 
 const Admin = () => {
@@ -18,6 +19,7 @@ const Admin = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchStats = async () => {
     try {
@@ -55,8 +57,26 @@ const Admin = () => {
     }
   };
 
+  const fetchNotificationsCount = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/notifications', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const unread = res.data.filter(n => !n.is_read).length;
+      setUnreadCount(unread);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
-    Promise.all([fetchStats(), fetchProductStats(), fetchUsers()]).finally(() => setLoading(false));
+    Promise.all([fetchStats(), fetchProductStats(), fetchUsers(), fetchNotificationsCount()]).finally(() => setLoading(false));
+
+    socket.on('notification_received', fetchNotificationsCount);
+    return () => {
+      socket.off('notification_received', fetchNotificationsCount);
+    };
   }, []);
 
   const confirmDelete = async () => {
@@ -210,8 +230,12 @@ const Admin = () => {
         <Tab eventKey="ctacte" title="Cuentas Corrientes">
           <CtaCteManager />
         </Tab>
-        <Tab eventKey="notifications" title="Notificaciones">
-          <NotificationsCenter />
+        <Tab eventKey="notifications" title={
+          <span>
+            Notificaciones {unreadCount > 0 && <Badge bg="danger" pill className="ms-1">{unreadCount}</Badge>}
+          </span>
+        }>
+          <NotificationsCenter onUpdate={fetchNotificationsCount} />
         </Tab>
       </Tabs>
 

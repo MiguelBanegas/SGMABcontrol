@@ -7,7 +7,7 @@ import { es } from 'date-fns/locale';
 import toast from 'react-hot-toast';
 import socket from '../socket';
 
-const NotificationsCenter = () => {
+const NotificationsCenter = ({ onUpdate }) => {
   const [notifications, setNotifications] = useState([]);
 
   const fetchNotifications = async () => {
@@ -17,6 +17,7 @@ const NotificationsCenter = () => {
         headers: { Authorization: `Bearer ${token}` }
       });
       setNotifications(res.data);
+      if (onUpdate) onUpdate();
     } catch (err) {
       console.error(err);
       toast.error('Error al cargar notificaciones');
@@ -37,6 +38,7 @@ const NotificationsCenter = () => {
       });
       toast.success('Notificación marcada como leída');
       fetchNotifications();
+      if (onUpdate) onUpdate();
     } catch (err) {
       console.error(err);
       toast.error('Error al actualizar notificación');
