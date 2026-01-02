@@ -55,6 +55,17 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
     }
   };
 
+  const handleAddCategory = async (name) => {
+    try {
+      const res = await axios.post(`${getApiUrl()}/products/categories`, { name });
+      toast.success('Categoría creada');
+      await fetchCategories();
+      setFormData(prev => ({ ...prev, category_id: res.data.id }));
+    } catch (err) {
+      toast.error('Error al crear categoría');
+    }
+  };
+
   const capitalizeWords = (str) => {
     return str.replace(/\b\w/g, l => l.toUpperCase());
   };
@@ -278,16 +289,28 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
             <Col xs={12}>
               <Form.Group className="mb-2">
                 <Form.Label className="small fw-bold mb-1">Categoría</Form.Label>
-                <Form.Select 
-                  name="category_id"
-                  value={formData.category_id}
-                  onChange={handleInputChange}
-                >
-                  <option value="">Sin Categoría</option>
-                  {categories.map(cat => (
-                    <option key={cat.id} value={cat.id}>{cat.name}</option>
-                  ))}
-                </Form.Select>
+                <div className="d-flex gap-2">
+                  <Form.Select 
+                    name="category_id"
+                    value={formData.category_id}
+                    onChange={handleInputChange}
+                    className="flex-grow-1"
+                  >
+                    <option value="">Sin Categoría</option>
+                    {categories.map(cat => (
+                      <option key={cat.id} value={cat.id}>{cat.name}</option>
+                    ))}
+                  </Form.Select>
+                  <Button 
+                    variant="outline-primary" 
+                    onClick={() => {
+                      const name = prompt('Nombre de la nueva categoría:');
+                      if (name) handleAddCategory(name);
+                    }}
+                  >
+                    +
+                  </Button>
+                </div>
               </Form.Group>
             </Col>
 

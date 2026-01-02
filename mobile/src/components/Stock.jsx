@@ -10,6 +10,8 @@ import { BarcodeScanner as CapBarcodeScanner } from '@capacitor-mlkit/barcode-sc
 import ProductDetailModal from './ProductDetailModal';
 import AddProductModal from './AddProductModal';
 
+const APP_VERSION = '1.0.1';
+
 const Stock = () => {
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -115,8 +117,8 @@ const Stock = () => {
     : products.slice(0, 20); 
 
   return (
-    <Container fluid className="px-3 py-2 bg-light" style={{ minHeight: '100vh' }}>
-      <div className="d-flex justify-content-between align-items-center mb-3">
+    <Container fluid className="px-3 py-2 bg-light d-flex flex-column" style={{ minHeight: '100vh' }}>
+      <div className="d-flex justify-content-between align-items-center mb-3 pt-2">
         <h4 className="mb-0 fw-bold d-flex align-items-center">
             <Package className="me-2 text-primary" size={24} /> Stock
         </h4>
@@ -125,34 +127,35 @@ const Stock = () => {
               <Button 
                 variant="primary" 
                 size="sm" 
-                className="rounded-circle p-2 shadow-sm"
+                className="rounded-circle p-2 shadow-sm d-flex align-items-center justify-content-center"
+                style={{ width: '38px', height: '38px' }}
                 onClick={() => { setScannedSku(''); setShowAddModal(true); }}
               >
-                <Plus size={20} />
+                <Plus size={22} />
               </Button>
             )}
-            <Link to="/settings" className="btn btn-light btn-sm rounded-circle p-2 shadow-sm">
+            <Link to="/settings" className="btn btn-light btn-sm rounded-circle p-2 shadow-sm d-flex align-items-center justify-content-center" style={{ width: '38px', height: '38px' }}>
                 <Settings size={20} className="text-secondary" />
             </Link>
-            <Button variant="light" size="sm" onClick={logout} className="rounded-circle p-2 shadow-sm text-danger">
+            <Button variant="light" size="sm" onClick={logout} className="rounded-circle p-2 shadow-sm text-danger d-flex align-items-center justify-content-center" style={{ width: '38px', height: '38px' }}>
                 <LogOut size={20} />
             </Button>
         </div>
       </div>
 
-      <InputGroup className="mb-4 shadow-sm border-0">
-        <InputGroup.Text className="bg-white border-0">
+      <InputGroup className="mb-3 shadow-sm border-0">
+        <InputGroup.Text className="bg-white border-0 pe-1">
           <Search size={18} className="text-muted" />
         </InputGroup.Text>
         <Form.Control
           placeholder="Buscar producto o SKU..."
-          className="border-0 py-2"
+          className="border-0 py-2 shadow-none"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
         />
         <Button 
             variant="white" 
-            className="border-0 pe-3 text-muted" 
+            className="border-0 pe-3 text-muted bg-white" 
             onClick={handleScan}
         >
             <Camera size={20} />
@@ -160,57 +163,66 @@ const Stock = () => {
       </InputGroup>
 
       {loading ? (
-          <div className="text-center py-5">Cargando productos...</div>
+          <div className="text-center py-5">
+            <div className="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
+            Cargando productos...
+          </div>
       ) : (
-          <Row xs={2} md={3} className="g-3">
-            {filteredProducts.map(product => (
-              <Col key={product.id}>
-                <Card 
-                    className="h-100 border-0 shadow-sm rounded-3 overflow-hidden" 
+          <div className="flex-grow-1">
+            {filteredProducts.length > 0 ? (
+              <div className="d-flex flex-column gap-2 pb-5">
+                {filteredProducts.map(product => (
+                  <div 
+                    key={product.id} 
+                    className="bg-white rounded-3 p-2 shadow-sm border-start border-4 border-primary d-flex align-items-center"
                     onClick={() => handleProductClick(product)}
-                    style={{ cursor: 'pointer' }}
-                >
-                  <div style={{ height: '120px', backgroundColor: '#f8f9fa', position: 'relative' }}>
-                    {product.image_url ? (
-                      <img 
-                        src={`${getServerUrl()}${product.image_url}`} 
-                        alt={product.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted opacity-25">
-                        <ImageIcon size={32} />
-                      </div>
-                    )}
-                    <Badge bg="dark" className="position-absolute top-0 end-0 m-1 opacity-75" style={{ fontSize: '0.6rem' }}>
-                      {product.sku}
-                    </Badge>
-                  </div>
-                  <Card.Body className="p-2">
-                    <Card.Title className="small fw-bold mb-1 text-truncate" title={product.name}>
-                        {product.name}
-                    </Card.Title>
-                    <div className="d-flex justify-content-between align-items-center">
-                      <span className="text-primary fw-bold small">${product.price_sell}</span>
-                      <Badge bg={product.stock > 5 ? "success" : "warning"} style={{ fontSize: '0.65rem' }}>
-                        {Number(product.stock)}
-                      </Badge>
+                  >
+                    <div style={{ width: '50px', height: '50px', borderRadius: '8px', backgroundColor: '#f8f9fa', overflow: 'hidden', marginRight: '12px', flexShrink: 0 }}>
+                       {product.image_url ? (
+                         <img src={`${getServerUrl()}${product.image_url}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                       ) : (
+                         <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted opacity-25">
+                           <Package size={24} />
+                         </div>
+                       )}
                     </div>
-                  </Card.Body>
-                </Card>
-              </Col>
-            ))}
-          </Row>
-      )}
-
-      {searchTerm.length > 0 && searchTerm.length < 3 && (
-          <div className="text-center text-muted mt-3 small">
-              Escriba al menos 3 caracteres para buscar...
+                    <div className="flex-grow-1 overflow-hidden">
+                      <div className="d-flex justify-content-between align-items-start">
+                        <h6 className="mb-0 fw-bold text-dark text-truncate" style={{ maxWidth: '70%' }}>{product.name}</h6>
+                        <span className="fw-bold text-primary small">${product.price_sell}</span>
+                      </div>
+                      <div className="d-flex justify-content-between align-items-center mt-1">
+                        <small className="text-muted extra-small">{product.sku}</small>
+                        <Badge bg={product.stock <= 0 ? 'danger' : 'light'} className={`extra-small ${product.stock <= 0 ? '' : 'text-dark border'}`}>
+                          {product.stock} {product.sell_by_weight ? 'kg' : 'uds.'}
+                        </Badge>
+                      </div>
+                      {product.category_name && (
+                        <div className="extra-small text-muted mt-1 opacity-75 d-flex align-items-center" style={{ fontSize: '0.65rem' }}>
+                           <Badge bg="secondary" className="opacity-75">{product.category_name}</Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                
+                <div className="text-center py-3 opacity-25 mt-3">
+                   <small className="extra-small">SGMAB Control - v{APP_VERSION}</small>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center mt-5 opacity-50">
+                <Search size={48} className="mb-2" />
+                <p>No se encontraron productos</p>
+              </div>
+            )}
           </div>
       )}
-      
-      {filteredProducts.length === 0 && !loading && (
-          <div className="text-center py-5 text-muted">No se encontraron productos</div>
+
+      {searchTerm.length > 0 && searchTerm.length < 3 && !loading && (
+          <div className="text-center text-muted mt-2 extra-small">
+              Escriba al menos 3 caracteres para filtrar...
+          </div>
       )}
 
       <ProductDetailModal 

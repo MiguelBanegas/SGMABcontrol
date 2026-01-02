@@ -24,6 +24,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(userData));
     localStorage.setItem('token', token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    resetInactivityTimer();
   };
 
   const logout = () => {
@@ -31,7 +32,33 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('user');
     localStorage.removeItem('token');
     delete axios.defaults.headers.common['Authorization'];
+    if (window.inactivityTimeout) clearTimeout(window.inactivityTimeout);
   };
+
+  const resetInactivityTimer = () => {
+    if (window.inactivityTimeout) clearTimeout(window.inactivityTimeout);
+    
+    // Solo si hay usuario logueado
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    window.inactivityTimeout = setTimeout(() => {
+      logout();
+      toast('Sesión cerrada por inactividad', { icon: '🕒' });
+    }, 10 * 60 * 1000); // 10 minutos
+  };
+
+  useEffect(() => {
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart'];
+    const handler = () => resetInactivityTimer();
+
+    events.forEach(event => window.addEventListener(event, handler));
+    
+    return () => {
+      events.forEach(event => window.removeEventListener(event, handler));
+      if (window.inactivityTimeout) clearTimeout(window.inactivityTimeout);
+    };
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, loading }}>
