@@ -16,40 +16,42 @@ const Home = () => <div className="mt-4"><h2>Bienvenido al SGM</h2><p>Seleccione
 
 function AppContent() {
   const { user, logout, loading } = useAuth();
+  const [needsUpdate, setNeedsUpdate] = React.useState(false);
 
   useEffect(() => {
-    socket.on('version_check', (serverVersion) => {
-      if (serverVersion !== APP_VERSION) {
-        toast((t) => (
-          <span>
-            <b>¡Nueva actualización!</b> ✨<br/>
-            Haga clic para aplicar los cambios.
-            <Button 
-              size="sm" 
-              variant="primary" 
-              className="ms-3 rounded-pill"
-              onClick={() => {
-                toast.dismiss(t.id);
-                window.location.reload();
-              }}
-            >
-              Actualizar
-            </Button>
-          </span>
-        ), {
-          duration: Infinity,
-          position: 'top-center',
-          style: {
-            background: '#333',
-            color: '#fff',
-            minWidth: '350px'
-          }
-        });
+    socket.on('version_check', (data) => {
+      // data puede ser el string antiguo o el nuevo objeto { web, mobile }
+      const serverWebVersion = typeof data === 'object' ? data.web : data;
+      if (serverWebVersion && serverWebVersion !== APP_VERSION) {
+        setNeedsUpdate(true);
       }
     });
 
     return () => socket.off('version_check');
   }, []);
+
+  if (needsUpdate) {
+    return (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+        backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 9999,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        color: 'white', textAlign: 'center', padding: '20px'
+      }}>
+        <h1 className="mb-4">✨ Nueva Versión Disponible ✨</h1>
+        <p className="lead mb-4">Se ha publicado una actualización crítica para el sistema.</p>
+        <Button 
+          variant="primary" 
+          size="lg" 
+          className="rounded-pill px-5 shadow-lg"
+          onClick={() => window.location.reload()}
+        >
+          Actualizar Ahora
+        </Button>
+        <small className="mt-4 opacity-50">SGMABControl v{APP_VERSION} → v1.x.x</small>
+      </div>
+    );
+  }
 
   if (loading) return <div className="d-flex justify-content-center mt-5">Cargando...</div>;
 

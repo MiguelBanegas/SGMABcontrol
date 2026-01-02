@@ -20,9 +20,12 @@ const io = new Server(server, {
   },
 });
 
-const APP_VERSION = "1.1.2"; // Versión actual del sistema
+const WEB_VERSION = "1.1.2";
+const MOBILE_VERSION = "1.0.1";
+
 app.set("io", io);
-app.set("version", APP_VERSION);
+app.set("version", WEB_VERSION);
+app.set("mobile_version", MOBILE_VERSION);
 
 const PORT = process.env.PORT || 5051;
 const fs = require("fs");
@@ -65,13 +68,18 @@ if (process.env.NODE_ENV === "production") {
 io.on("connection", (socket) => {
   console.log("Nuevo cliente conectado:", socket.id);
 
-  // Enviar versión actual al cliente
-  socket.emit("version_check", APP_VERSION);
+  // Enviar versión actual al cliente al conectar
+  socket.emit("version_check", { web: WEB_VERSION, mobile: MOBILE_VERSION });
 
   socket.on("disconnect", () => {
     console.log("Cliente desconectado:", socket.id);
   });
 });
+
+// Emitir la versión cada 30 segundos a todos para forzar actualización si cambió
+setInterval(() => {
+  io.emit("version_check", { web: WEB_VERSION, mobile: MOBILE_VERSION });
+}, 30000);
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

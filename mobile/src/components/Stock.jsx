@@ -142,6 +142,19 @@ const Stock = () => {
     return () => socket.off('catalog_updated', handleUpdate);
   }, [selectedProduct, activeTab, searchTerm]);
 
+  const [needsUpdate, setNeedsUpdate] = useState(false);
+
+  // Peridodic version check to force update
+  useEffect(() => {
+    socket.on('version_check', (data) => {
+      const serverMobileVersion = typeof data === 'object' ? data.mobile : null;
+      if (serverMobileVersion && serverMobileVersion !== APP_VERSION) {
+        setNeedsUpdate(true);
+      }
+    });
+    return () => socket.off('version_check');
+  }, []);
+
   const handleProductClick = (product) => {
     setSelectedProduct(product);
     setShowDetail(true);
@@ -151,6 +164,26 @@ const Stock = () => {
 
   return (
     <Container fluid className="px-3 py-2 bg-light d-flex flex-column" style={{ minHeight: '100vh' }}>
+      {needsUpdate && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 10000,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          color: 'white', textAlign: 'center', padding: '30px'
+        }}>
+          <h2 className="mb-4">🚀 Nueva Versión 🚀</h2>
+          <p className="mb-4">Hay una actualización importante disponible para SGMABControl.</p>
+          <Button 
+            variant="primary" 
+            size="lg" 
+            className="w-100 rounded-pill py-3 fw-bold shadow-lg"
+            onClick={() => window.location.reload()}
+          >
+            Actualizar App
+          </Button>
+          <small className="mt-4 opacity-50">v{APP_VERSION} → Nueva</small>
+        </div>
+      )}
       <div className="d-flex justify-content-between align-items-center mb-3 pt-2">
         <h5 className="mb-0 fw-bold d-flex align-items-center text-primary">
             SGMABControl Stock v{APP_VERSION}
