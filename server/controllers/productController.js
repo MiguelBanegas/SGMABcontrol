@@ -32,15 +32,15 @@ exports.createProduct = async (req, res) => {
 
   // Validación de precios
   const pBuy =
-    price_buy === "" || price_buy === null ? null : parseFloat(price_buy);
-  const pSell = parseFloat(price_sell);
+    price_buy === "" || price_buy === null
+      ? null
+      : Math.max(0, parseFloat(price_buy));
+  const pSell = Math.max(0, parseFloat(price_sell));
 
-  if (pBuy !== null && (pBuy < 0 || pBuy > 10000000)) {
-    return res
-      .status(400)
-      .json({ message: "Precio de compra inválido o absurdo" });
+  if (pBuy !== null && pBuy > 10000000) {
+    return res.status(400).json({ message: "Precio de compra absurdo" });
   }
-  if (isNaN(pSell) || pSell < 0 || pSell > 10000000) {
+  if (isNaN(pSell) || pSell > 10000000) {
     return res
       .status(400)
       .json({ message: "Precio de venta inválido o absurdo" });
@@ -53,7 +53,7 @@ exports.createProduct = async (req, res) => {
     sku,
     price_buy: pBuy,
     price_sell: pSell,
-    stock: stock === "" ? 0 : parseFloat(stock),
+    stock: stock === "" ? 0 : Math.max(0, parseFloat(stock)),
     sell_by_weight:
       req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
     category_id:
@@ -83,15 +83,15 @@ exports.updateProduct = async (req, res) => {
 
   // Validación de precios
   const pBuy =
-    price_buy === "" || price_buy === null ? null : parseFloat(price_buy);
-  const pSell = parseFloat(price_sell);
+    price_buy === "" || price_buy === null
+      ? null
+      : Math.max(0, parseFloat(price_buy));
+  const pSell = Math.max(0, parseFloat(price_sell));
 
-  if (pBuy !== null && (pBuy < 0 || pBuy > 10000000)) {
-    return res
-      .status(400)
-      .json({ message: "Precio de compra inválido o absurdo" });
+  if (pBuy !== null && pBuy > 10000000) {
+    return res.status(400).json({ message: "Precio de compra absurdo" });
   }
-  if (isNaN(pSell) || pSell < 0 || pSell > 10000000) {
+  if (isNaN(pSell) || pSell > 10000000) {
     return res
       .status(400)
       .json({ message: "Precio de venta inválido o absurdo" });
@@ -103,7 +103,7 @@ exports.updateProduct = async (req, res) => {
     sku,
     price_buy: pBuy,
     price_sell: pSell,
-    stock: stock === "" ? 0 : parseFloat(stock),
+    stock: stock === "" ? 0 : Math.max(0, parseFloat(stock)),
     sell_by_weight:
       req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
     category_id:
@@ -193,8 +193,9 @@ exports.getProductStats = async (req, res) => {
   try {
     const totalProducts = await db("products").count("id as count").first();
     const lowStockProducts = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
       .where("stock", "<", 5)
-      .select("id", "name", "sku", "stock")
+      .select("products.*", "categories.name as category_name")
       .orderBy("stock", "asc");
 
     res.json({

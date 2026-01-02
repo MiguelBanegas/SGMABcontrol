@@ -59,6 +59,14 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
 
   const handleAdjust = async (value) => {
     if (!product?.id) return;
+    
+    // Validar que el stock resultante no sea negativo
+    const currentStock = parseFloat(product.stock);
+    if (currentStock + value < 0) {
+      toast.error('El stock no puede ser negativo');
+      return;
+    }
+
     try {
       setIsAdjusting(true);
       await axios.post(`${getApiUrl()}/products/${product.id}/adjust-stock`, {
@@ -155,7 +163,10 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
 
   const handleManualEntry = async () => {
     const newVal = parseFloat(manualStock);
-    if (isNaN(newVal) || newVal < 0) return;
+    if (isNaN(newVal) || newVal < 0) {
+      toast.error('El stock no puede ser negativo');
+      return;
+    }
     await handleAdjust(newVal - parseFloat(product.stock));
     setShowManual(false);
     setManualStock('');
@@ -269,13 +280,19 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
                 <Col xs={6}>
                   <Form.Group>
                     <Form.Label className="extra-small mb-0">Compra</Form.Label>
-                    <Form.Control size="sm" type="number" value={prices.price_buy} onChange={e => setPrices({...prices, price_buy: e.target.value})} />
+                    <Form.Control size="sm" type="number" value={prices.price_buy} onChange={e => {
+                      if (parseFloat(e.target.value) < 0) return;
+                      setPrices({...prices, price_buy: e.target.value});
+                    }} />
                   </Form.Group>
                 </Col>
                 <Col xs={6}>
                   <Form.Group>
                     <Form.Label className="extra-small mb-0">Venta</Form.Label>
-                    <Form.Control size="sm" type="number" value={prices.price_sell} onChange={e => setPrices({...prices, price_sell: e.target.value})} />
+                    <Form.Control size="sm" type="number" value={prices.price_sell} onChange={e => {
+                      if (parseFloat(e.target.value) < 0) return;
+                      setPrices({...prices, price_sell: e.target.value});
+                    }} />
                   </Form.Group>
                 </Col>
                 <Col xs={12}>

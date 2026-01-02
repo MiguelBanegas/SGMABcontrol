@@ -14,6 +14,9 @@ const APP_VERSION = '1.0.1';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
+  const [topSellers, setTopSellers] = useState([]);
+  const [lowStock, setLowStock] = useState([]);
+  const [activeTab, setActiveTab] = useState('top'); // 'top', 'low', 'search'
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -45,6 +48,7 @@ const Stock = () => {
       if (barcodes && barcodes.length > 0) {
         const sku = barcodes[0].displayValue;
         setSearchTerm(sku);
+        setActiveTab('search');
         
         try {
           const res = await axios.get(`${getApiUrl()}/products/sku/${sku}`);
@@ -73,24 +77,58 @@ const Stock = () => {
     }
   };
 
-  const fetchProducts = async () => {
+  const fetchInitialData = async () => {
+    setLoading(true);
     try {
-      const res = await axios.get(`${getApiUrl()}/products`);
-      setProducts(res.data);
+      const [topRes, lowRes] = await Promise.all([
+        axios.get(`${getApiUrl()}/products/top-sellers`),
+        axios.get(`${getApiUrl()}/products/stats`)
+      ]);
+      setTopSellers(topRes.data);
+      setLowStock(lowRes.data.lowStockProducts || []);
     } catch (err) {
-      console.error(err);
+      console.error('Error al cargar datos iniciales:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const performSearch = async () => {
+    if (searchTerm.length < 3) return;
+    setLoading(true);
+    try {
+      // Por ahora usamos el endpoint general y filtramos, pero en un futuro podría ser un endpoint de búsqueda
+      const res = await axios.get(`${getApiUrl()}/products`);
+      const filtered = res.data.filter(p => 
+        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setProducts(filtered);
+    } catch (err) {
+      console.error('Error en búsqueda:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchProducts();
+    fetchInitialData();
   }, []);
 
   useEffect(() => {
+    if (activeTab === 'search' && searchTerm.length >= 3) {
+      const delayDebounceFn = setTimeout(() => {
+        performSearch();
+      }, 500);
+      return () => clearTimeout(delayDebounceFn);
+    }
+  }, [searchTerm, activeTab]);
+
+  useEffect(() => {
     const handleUpdate = () => {
-      fetchProducts();
+      fetchInitialData();
+      if (activeTab === 'search' && searchTerm.length >= 3) performSearch();
+      
       if (selectedProduct) {
         axios.get(`${getApiUrl()}/products/sku/${selectedProduct.sku}`)
           .then(res => {
@@ -102,26 +140,21 @@ const Stock = () => {
 
     socket.on('catalog_updated', handleUpdate);
     return () => socket.off('catalog_updated', handleUpdate);
-  }, [selectedProduct]);
+  }, [selectedProduct, activeTab, searchTerm]);
 
   const handleProductClick = (product) => {
     setSelectedProduct(product);
     setShowDetail(true);
   };
 
-  const filteredProducts = searchTerm.length >= 3 
-    ? products.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-    : products.slice(0, 20); 
+  const currentProducts = activeTab === 'top' ? topSellers : (activeTab === 'low' ? lowStock : products);
 
   return (
     <Container fluid className="px-3 py-2 bg-light d-flex flex-column" style={{ minHeight: '100vh' }}>
       <div className="d-flex justify-content-between align-items-center mb-3 pt-2">
-        <h4 className="mb-0 fw-bold d-flex align-items-center">
-            <Package className="me-2 text-primary" size={24} /> Stock
-        </h4>
+        <h5 className="mb-0 fw-bold d-flex align-items-center text-primary">
+            SGMABControl Stock v{APP_VERSION}
+        </h5>
         <div className="d-flex gap-2">
             {isAdmin && (
               <Button 
@@ -143,37 +176,64 @@ const Stock = () => {
         </div>
       </div>
 
-      <InputGroup className="mb-3 shadow-sm border-0">
-        <InputGroup.Text className="bg-white border-0 pe-1">
-          <Search size={18} className="text-muted" />
-        </InputGroup.Text>
-        <Form.Control
-          placeholder="Buscar producto o SKU..."
-          className="border-0 py-2 shadow-none"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-        />
+      <div className="d-flex bg-white rounded-pill p-1 mb-3 shadow-sm">
         <Button 
-            variant="white" 
-            className="border-0 pe-3 text-muted bg-white" 
-            onClick={handleScan}
+          variant={activeTab === 'top' ? 'primary' : 'white'} 
+          className={`flex-grow-1 rounded-pill border-0 py-1 extra-small ${activeTab === 'top' ? 'shadow-sm' : 'text-muted'}`}
+          onClick={() => setActiveTab('top')}
         >
-            <Camera size={20} />
+          <TrendingUp size={14} className="me-1" /> Más Vendidos
         </Button>
-      </InputGroup>
+        <Button 
+          variant={activeTab === 'low' ? 'primary' : 'white'} 
+          className={`flex-grow-1 rounded-pill border-0 py-1 extra-small ${activeTab === 'low' ? 'shadow-sm' : 'text-muted'}`}
+          onClick={() => setActiveTab('low')}
+        >
+          <Package size={14} className="me-1" /> Bajo Stock
+        </Button>
+        <Button 
+          variant={activeTab === 'search' ? 'primary' : 'white'} 
+          className={`flex-grow-1 rounded-pill border-0 py-1 extra-small ${activeTab === 'search' ? 'shadow-sm' : 'text-muted'}`}
+          onClick={() => setActiveTab('search')}
+        >
+          <Search size={14} className="me-1" /> Buscar
+        </Button>
+      </div>
+
+      {activeTab === 'search' && (
+        <InputGroup className="mb-3 shadow-sm border-0">
+          <InputGroup.Text className="bg-white border-0 pe-1">
+            <Search size={18} className="text-muted" />
+          </InputGroup.Text>
+          <Form.Control
+            placeholder="Nombre o SKU..."
+            className="border-0 py-2 shadow-none"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            autoFocus
+          />
+          <Button 
+              variant="white" 
+              className="border-0 pe-3 text-muted bg-white" 
+              onClick={handleScan}
+          >
+              <Camera size={20} />
+          </Button>
+        </InputGroup>
+      )}
 
       {loading ? (
           <div className="text-center py-5">
             <div className="spinner-border text-primary spinner-border-sm me-2" role="status"></div>
-            Cargando productos...
+            Cargando...
           </div>
       ) : (
-          <div className="flex-grow-1">
-            {filteredProducts.length > 0 ? (
+          <div className="flex-grow-1 overflow-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+            {currentProducts.length > 0 ? (
               <div className="d-flex flex-column gap-2 pb-5">
-                {filteredProducts.map(product => (
+                {currentProducts.map(product => (
                   <div 
-                    key={product.id} 
+                    key={`${activeTab}-${product.id}`} 
                     className="bg-white rounded-3 p-2 shadow-sm border-start border-4 border-primary d-flex align-items-center"
                     onClick={() => handleProductClick(product)}
                   >
@@ -188,12 +248,12 @@ const Stock = () => {
                     </div>
                     <div className="flex-grow-1 overflow-hidden">
                       <div className="d-flex justify-content-between align-items-start">
-                        <h6 className="mb-0 fw-bold text-dark text-truncate" style={{ maxWidth: '70%' }}>{product.name}</h6>
+                        <h6 className="mb-0 fw-bold text-dark text-truncate" style={{ maxWidth: '75%' }}>{product.name}</h6>
                         <span className="fw-bold text-primary small">${product.price_sell}</span>
                       </div>
                       <div className="d-flex justify-content-between align-items-center mt-1">
                         <small className="text-muted extra-small">{product.sku}</small>
-                        <Badge bg={product.stock <= 0 ? 'danger' : 'light'} className={`extra-small ${product.stock <= 0 ? '' : 'text-dark border'}`}>
+                        <Badge bg={product.stock <= 0 ? 'danger' : (product.stock < 5 ? 'warning' : 'light')} className={`extra-small ${product.stock < 5 && product.stock > 0 ? 'text-dark' : (product.stock >= 5 ? 'text-dark border' : '')}`}>
                           {product.stock} {product.sell_by_weight ? 'kg' : 'uds.'}
                         </Badge>
                       </div>
@@ -205,23 +265,19 @@ const Stock = () => {
                     </div>
                   </div>
                 ))}
-                
-                <div className="text-center py-3 opacity-25 mt-3">
-                   <small className="extra-small">SGMAB Control - v{APP_VERSION}</small>
-                </div>
               </div>
             ) : (
               <div className="text-center mt-5 opacity-50">
-                <Search size={48} className="mb-2" />
-                <p>No se encontraron productos</p>
+                {activeTab === 'search' && searchTerm.length < 3 ? (
+                  <p>Escribe al menos 3 letras para buscar</p>
+                ) : (
+                  <>
+                    <Search size={48} className="mb-2" />
+                    <p>No se encontraron productos</p>
+                  </>
+                )}
               </div>
             )}
-          </div>
-      )}
-
-      {searchTerm.length > 0 && searchTerm.length < 3 && !loading && (
-          <div className="text-center text-muted mt-2 extra-small">
-              Escriba al menos 3 caracteres para filtrar...
           </div>
       )}
 
@@ -235,7 +291,7 @@ const Stock = () => {
         show={showAddModal} 
         handleClose={() => setShowAddModal(false)}
         initialSku={scannedSku}
-        refreshProducts={fetchProducts}
+        refreshProducts={fetchInitialData}
       />
     </Container>
   );
