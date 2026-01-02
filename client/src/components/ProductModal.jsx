@@ -103,6 +103,13 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       value = e.target.checked;
     }
 
+    if (['stock', 'price_buy', 'price_sell'].includes(name)) {
+      if (parseFloat(value) < 0) {
+        toast.error('No se permiten valores negativos');
+        return;
+      }
+    }
+
     setFormData({ ...formData, [name]: value });
   };
 
