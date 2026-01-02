@@ -9,12 +9,13 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    }
+    // Se elimina la carga automática de localStorage para forzar login al iniciar
+    // const savedUser = localStorage.getItem('user');
+    // const token = localStorage.getItem('token');
+    // if (savedUser && token) {
+    //   setUser(JSON.parse(savedUser));
+    //   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // }
     setLoading(false);
   }, []);
 
