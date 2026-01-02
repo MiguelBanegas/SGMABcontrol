@@ -72,15 +72,23 @@ const Stock = () => {
 
   useEffect(() => {
     fetchProducts();
-
-    socket.on('catalog_updated', () => {
-      fetchProducts();
-    });
-
-    return () => {
-      socket.off('catalog_updated');
-    };
   }, []);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchProducts();
+      if (selectedProduct) {
+        axios.get(`${getApiUrl()}/products/sku/${selectedProduct.sku}`)
+          .then(res => {
+            if (res.data) setSelectedProduct(res.data);
+          })
+          .catch(err => console.error('Error refreshing selected product:', err));
+      }
+    };
+
+    socket.on('catalog_updated', handleUpdate);
+    return () => socket.off('catalog_updated', handleUpdate);
+  }, [selectedProduct]);
 
   const handleProductClick = (product) => {
     setSelectedProduct(product);

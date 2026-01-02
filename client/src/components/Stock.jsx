@@ -49,18 +49,25 @@ const Stock = () => {
     fetchProducts();
     fetchCategories();
     fetchTopSellers();
+  }, []);
 
-    // Escuchar actualizaciones en tiempo real
-    socket.on('catalog_updated', () => {
+  useEffect(() => {
+    const handleUpdate = () => {
       console.log('Catálogo actualizado via Socket.io');
       fetchProducts();
       fetchTopSellers();
-    });
-
-    return () => {
-      socket.off('catalog_updated');
+      if (editingProduct) {
+        axios.get(`/api/products/sku/${editingProduct.sku}`)
+          .then(res => {
+            if (res.data) setEditingProduct(res.data);
+          })
+          .catch(err => console.error('Error refreshing editing product:', err));
+      }
     };
-  }, []);
+
+    socket.on('catalog_updated', handleUpdate);
+    return () => socket.off('catalog_updated', handleUpdate);
+  }, [editingProduct]);
 
   const filteredProducts = searchTerm.length >= 3 
     ? products.filter(p => 
