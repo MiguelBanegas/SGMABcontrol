@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SGM AB Control</string>
+    <string name="title_activity_main">SGM AB Control</string>
+    <string name="package_name">ar.mabcontrol.sgm</string>
+    <string name="custom_url_scheme">ar.mabcontrol.sgm</string>
+</resources>

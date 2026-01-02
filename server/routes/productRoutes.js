@@ -18,13 +18,30 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
+const { verifyToken, isAdmin } = require("../middleware/authMiddleware");
+
 router.get("/", productController.getAllProducts);
 router.get("/stats", productController.getProductStats);
 router.get("/top-sellers", productController.getTopSellers);
 router.get("/sku/:sku", productController.getProductBySku);
-router.post("/", upload.single("image"), productController.createProduct);
-router.put("/:id", upload.single("image"), productController.updateProduct);
-router.delete("/:id", productController.deleteProduct);
+
+// Rutas protegidas (Solo Admin)
+router.post(
+  "/",
+  verifyToken,
+  isAdmin,
+  upload.single("image"),
+  productController.createProduct
+);
+router.put(
+  "/:id",
+  verifyToken,
+  isAdmin,
+  upload.single("image"),
+  productController.updateProduct
+);
+router.delete("/:id", verifyToken, isAdmin, productController.deleteProduct);
+router.post("/:id/adjust-stock", verifyToken, productController.adjustStock); // El ajuste de stock puede ser por vendedor o admin, según decidas. Lo dejo con verifyToken.
 router.get("/categories", productController.getCategories);
 router.post("/categories", productController.createCategory);
 router.delete("/categories/:id", productController.deleteCategory);

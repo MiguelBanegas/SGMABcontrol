@@ -30,13 +30,29 @@ exports.createProduct = async (req, res) => {
     req.body;
   const image_url = req.file ? `/uploads/${req.file.filename}` : null;
 
+  // Validación de precios
+  const pBuy =
+    price_buy === "" || price_buy === null ? null : parseFloat(price_buy);
+  const pSell = parseFloat(price_sell);
+
+  if (pBuy !== null && (pBuy < 0 || pBuy > 10000000)) {
+    return res
+      .status(400)
+      .json({ message: "Precio de compra inválido o absurdo" });
+  }
+  if (isNaN(pSell) || pSell < 0 || pSell > 10000000) {
+    return res
+      .status(400)
+      .json({ message: "Precio de venta inválido o absurdo" });
+  }
+
   // Sanitización de datos
   const productData = {
     name,
     description: description || null,
     sku,
-    price_buy: price_buy === "" ? null : parseFloat(price_buy),
-    price_sell: parseFloat(price_sell),
+    price_buy: pBuy,
+    price_sell: pSell,
     stock: stock === "" ? 0 : parseFloat(stock),
     sell_by_weight:
       req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
@@ -62,12 +78,31 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   const { id } = req.params;
+  const { name, description, sku, price_buy, price_sell, stock, category_id } =
+    req.body;
+
+  // Validación de precios
+  const pBuy =
+    price_buy === "" || price_buy === null ? null : parseFloat(price_buy);
+  const pSell = parseFloat(price_sell);
+
+  if (pBuy !== null && (pBuy < 0 || pBuy > 10000000)) {
+    return res
+      .status(400)
+      .json({ message: "Precio de compra inválido o absurdo" });
+  }
+  if (isNaN(pSell) || pSell < 0 || pSell > 10000000) {
+    return res
+      .status(400)
+      .json({ message: "Precio de venta inválido o absurdo" });
+  }
+
   const updateData = {
     name,
     description: description || null,
     sku,
-    price_buy: price_buy === "" ? null : parseFloat(price_buy),
-    price_sell: parseFloat(price_sell),
+    price_buy: pBuy,
+    price_sell: pSell,
     stock: stock === "" ? 0 : parseFloat(stock),
     sell_by_weight:
       req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
@@ -87,7 +122,10 @@ exports.updateProduct = async (req, res) => {
     res.json({ message: "Producto actualizado con éxito" });
   } catch (error) {
     console.error("Error al actualizar producto:", error);
-    res.status(500).json({ message: "Error al actualizar producto" });
+    res.status(500).json({
+      message: "Error al actualizar producto",
+      error: error.message,
+    });
   }
 };
 
@@ -200,5 +238,39 @@ exports.getTopSellers = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error al obtener productos más vendidos" });
+  }
+};
+
+exports.adjustStock = async (req, res) => {
+  const { id } = req.params;
+  const { adjustment } = req.body;
+
+  if (isNaN(adjustment)) {
+    return res.status(400).json({ message: "El ajuste debe ser un número" });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      const product = await trx("products").where({ id }).first();
+      if (!product) {
+        throw new Error("Producto no encontrado");
+      }
+
+      const newStock = parseFloat(product.stock) + parseFloat(adjustment);
+      if (newStock < 0) {
+        throw new Error("El stock resultante no puede ser negativo");
+      }
+
+      await trx("products").where({ id }).update({ stock: newStock });
+    });
+
+    req.app.get("io").emit("catalog_updated");
+    res.json({ message: "Stock ajustado con éxito" });
+  } catch (error) {
+    console.error("Error en adjustStock:", error);
+    res.status(error.message === "Producto no encontrado" ? 404 : 400).json({
+      message: error.message || "Error interno al ajustar stock",
+      error: error.message,
+    });
   }
 };
