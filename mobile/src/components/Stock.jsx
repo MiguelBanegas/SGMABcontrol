@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Row, Col, Card, Form, InputGroup, Badge, ListGroup, Button, Container } from 'react-bootstrap';
-import { Search, Package, Image as ImageIcon, TrendingUp, Settings, LogOut, Camera } from 'lucide-react';
+import { Search, Package, Image as ImageIcon, TrendingUp, Settings, LogOut, Camera, Plus } from 'lucide-react';
 import axios from 'axios';
 import { getApiUrl, getServerUrl } from '../utils/config';
 import socket from '../socket';
@@ -8,6 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { BarcodeScanner as CapBarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 import ProductDetailModal from './ProductDetailModal';
+import AddProductModal from './AddProductModal';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
@@ -15,11 +16,13 @@ const Stock = () => {
   const [loading, setLoading] = useState(true);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [scannedSku, setScannedSku] = useState('');
   const { logout, user } = useAuth();
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
 
   const handleScan = async () => {
     try {
-      // 1. Verificar/Solicitar permisos
       const status = await CapBarcodeScanner.checkPermissions();
       if (status.camera !== 'granted') {
           const requestStatus = await CapBarcodeScanner.requestPermissions();
@@ -29,14 +32,12 @@ const Stock = () => {
           }
       }
 
-      // 2. Asegurarse de que el módulo esté instalado
       try {
         await CapBarcodeScanner.installGoogleBarcodeScannerModule();
       } catch (installErr) {
         console.log('El módulo ya estaba instalado o hubo un error menor:', installErr.message);
       }
       
-      // 3. Iniciar escaneo
       const { barcodes } = await CapBarcodeScanner.scan();
       
       if (barcodes && barcodes.length > 0) {
@@ -50,7 +51,18 @@ const Stock = () => {
             setShowDetail(true);
           }
         } catch (searchErr) {
-          alert('SKU no encontrado: ' + sku);
+          if (searchErr.response?.status === 404) {
+            if (isAdmin) {
+              if (window.confirm(`El SKU ${sku} no existe. ¿Desea agregarlo como nuevo producto?`)) {
+                setScannedSku(sku);
+                setShowAddModal(true);
+              }
+            } else {
+              alert('SKU no encontrado: ' + sku);
+            }
+          } else {
+            alert('Error al buscar SKU: ' + (searchErr.response?.data?.message || searchErr.message));
+          }
         }
       }
     } catch (err) {
@@ -100,7 +112,7 @@ const Stock = () => {
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
         p.sku.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    : products.slice(0, 20); // Mostrar los primeros 20 por defecto si no hay búsqueda
+    : products.slice(0, 20); 
 
   return (
     <Container fluid className="px-3 py-2 bg-light" style={{ minHeight: '100vh' }}>
@@ -109,6 +121,16 @@ const Stock = () => {
             <Package className="me-2 text-primary" size={24} /> Stock
         </h4>
         <div className="d-flex gap-2">
+            {isAdmin && (
+              <Button 
+                variant="primary" 
+                size="sm" 
+                className="rounded-circle p-2 shadow-sm"
+                onClick={() => { setScannedSku(''); setShowAddModal(true); }}
+              >
+                <Plus size={20} />
+              </Button>
+            )}
             <Link to="/settings" className="btn btn-light btn-sm rounded-circle p-2 shadow-sm">
                 <Settings size={20} className="text-secondary" />
             </Link>
@@ -195,6 +217,13 @@ const Stock = () => {
         show={showDetail} 
         handleClose={() => setShowDetail(false)} 
         product={selectedProduct} 
+      />
+
+      <AddProductModal 
+        show={showAddModal} 
+        handleClose={() => setShowAddModal(false)}
+        initialSku={scannedSku}
+        refreshProducts={fetchProducts}
       />
     </Container>
   );
