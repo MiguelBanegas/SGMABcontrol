@@ -6,12 +6,15 @@ import { getApiUrl } from '../utils/config';
 import { Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+import { Fingerprint } from 'lucide-react';
+
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [useBiometric, setUseBiometric] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isBiometricAvailable, attemptBiometricLogin } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,12 +26,19 @@ const Login = () => {
         username,
         password
       });
-      login(res.data.user, res.data.token);
+      
+      const credentials = useBiometric ? { username, password } : null;
+      login(res.data.user, res.data.token, credentials);
     } catch (err) {
       setError(err.response?.data?.message || 'Error al iniciar sesión. Verifique la URL del servidor.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBiometricClick = async () => {
+    setError('');
+    await attemptBiometricLogin();
   };
 
   return (
@@ -71,9 +81,36 @@ const Login = () => {
                   placeholder="Ingrese su contraseña"
                 />
               </Form.Group>
+
+              {isBiometricAvailable && (
+                <Form.Group className="mb-4">
+                  <Form.Check 
+                    type="switch"
+                    id="biometric-switch"
+                    label="Habilitar acceso con huella/rostro"
+                    checked={useBiometric}
+                    onChange={(e) => setUseBiometric(e.target.checked)}
+                    className="small text-muted"
+                  />
+                </Form.Group>
+              )}
+
               <Button disabled={loading} className="w-100 rounded-3 btn-primary py-2 fw-bold" type="submit">
                 {loading ? 'Entrando...' : 'Ingresar'}
               </Button>
+
+              {isBiometricAvailable && localStorage.getItem('biometric_enabled') === 'true' && (
+                <div className="text-center mt-3">
+                  <Button 
+                    variant="outline-primary" 
+                    className="rounded-circle p-3"
+                    onClick={handleBiometricClick}
+                    disabled={loading}
+                  >
+                    <Fingerprint size={32} />
+                  </Button>
+                </div>
+              )}
             </Form>
           </Card.Body>
         </Card>

@@ -1,29 +1,73 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
 import { getApiUrl } from '../utils/config';
+import { NativeBiometric } from 'capacitor-native-biometric';
+import toast from 'react-hot-toast';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [isBiometricAvailable, setIsBiometricAvailable] = useState(false);
 
   useEffect(() => {
-    // Se elimina la carga automática de localStorage para forzar login al iniciar
-    // const savedUser = localStorage.getItem('user');
-    // const token = localStorage.getItem('token');
-    // if (savedUser && token) {
-    //   setUser(JSON.parse(savedUser));
-    //   axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    // }
-    setLoading(false);
+    checkBiometricAvailability();
+    attemptBiometricLogin();
   }, []);
 
-  const login = (userData, token) => {
+  const checkBiometricAvailability = async () => {
+    try {
+      const result = await NativeBiometric.isAvailable();
+      setIsBiometricAvailable(result.isAvailable);
+    } catch (e) {
+      setIsBiometricAvailable(false);
+    }
+  };
+
+  const attemptBiometricLogin = async () => {
+    const biometricEnabled = localStorage.getItem('biometric_enabled') === 'true';
+    if (!biometricEnabled) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const credentials = await NativeBiometric.getCredentials({
+        server: 'sgmabcontrol.ar',
+      });
+
+      if (credentials) {
+        const res = await axios.post(`${getApiUrl()}/auth/login`, {
+          username: credentials.username,
+          password: credentials.password
+        });
+        login(res.data.user, res.data.token);
+        toast.success('Acceso biométrico exitoso');
+      }
+    } catch (error) {
+      console.log('Biometric login skipped or failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const login = (userData, token, credentials = null) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
     localStorage.setItem('token', token);
     axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    
+    if (credentials) {
+      NativeBiometric.setCredentials({
+        username: credentials.username,
+        password: credentials.password,
+        server: 'sgmabcontrol.ar',
+      }).then(() => {
+        localStorage.setItem('biometric_enabled', 'true');
+      });
+    }
+
     resetInactivityTimer();
   };
 
@@ -61,7 +105,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, logout, loading, isBiometricAvailable, attemptBiometricLogin }}>
       {children}
     </AuthContext.Provider>
   );
