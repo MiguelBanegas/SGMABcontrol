@@ -26,8 +26,17 @@ exports.getProductBySku = async (req, res) => {
 };
 
 exports.createProduct = async (req, res) => {
-  const { name, description, sku, price_buy, price_sell, stock, category_id } =
-    req.body;
+  const {
+    name,
+    description,
+    sku,
+    price_buy,
+    price_sell,
+    stock,
+    category_id,
+    price_offer,
+    is_offer,
+  } = req.body;
   const image_url = req.file ? `/uploads/${req.file.filename}` : null;
 
   // Validación de precios
@@ -36,6 +45,10 @@ exports.createProduct = async (req, res) => {
       ? null
       : Math.max(0, parseFloat(price_buy));
   const pSell = Math.max(0, parseFloat(price_sell));
+  const pOffer =
+    price_offer === "" || price_offer === null
+      ? null
+      : Math.max(0, parseFloat(price_offer));
 
   if (pBuy !== null && pBuy > 10000000) {
     return res.status(400).json({ message: "Precio de compra absurdo" });
@@ -44,6 +57,9 @@ exports.createProduct = async (req, res) => {
     return res
       .status(400)
       .json({ message: "Precio de venta inválido o absurdo" });
+  }
+  if (pOffer !== null && isNaN(pOffer)) {
+    return res.status(400).json({ message: "Precio de oferta inválido" });
   }
 
   // Sanitización de datos
@@ -60,6 +76,8 @@ exports.createProduct = async (req, res) => {
       category_id === "" || category_id === "null"
         ? null
         : parseInt(category_id),
+    price_offer: pOffer,
+    is_offer: is_offer === "true" || is_offer === true,
     image_url,
   };
 
@@ -78,8 +96,17 @@ exports.createProduct = async (req, res) => {
 
 exports.updateProduct = async (req, res) => {
   const { id } = req.params;
-  const { name, description, sku, price_buy, price_sell, stock, category_id } =
-    req.body;
+  const {
+    name,
+    description,
+    sku,
+    price_buy,
+    price_sell,
+    stock,
+    category_id,
+    price_offer,
+    is_offer,
+  } = req.body;
 
   // Validación de precios
   const pBuy =
@@ -87,6 +114,10 @@ exports.updateProduct = async (req, res) => {
       ? null
       : Math.max(0, parseFloat(price_buy));
   const pSell = Math.max(0, parseFloat(price_sell));
+  const pOffer =
+    price_offer === "" || price_offer === null
+      ? null
+      : Math.max(0, parseFloat(price_offer));
 
   if (pBuy !== null && pBuy > 10000000) {
     return res.status(400).json({ message: "Precio de compra absurdo" });
@@ -95,6 +126,9 @@ exports.updateProduct = async (req, res) => {
     return res
       .status(400)
       .json({ message: "Precio de venta inválido o absurdo" });
+  }
+  if (pOffer !== null && isNaN(pOffer)) {
+    return res.status(400).json({ message: "Precio de oferta inválido" });
   }
 
   const updateData = {
@@ -110,6 +144,8 @@ exports.updateProduct = async (req, res) => {
       category_id === "" || category_id === "null"
         ? null
         : parseInt(category_id),
+    price_offer: pOffer,
+    is_offer: is_offer === "true" || is_offer === true,
   };
 
   if (req.file) {

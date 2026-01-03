@@ -19,7 +19,9 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     price_sell: '',
     stock: '',
     category_id: '',
-    sell_by_weight: false
+    sell_by_weight: false,
+    price_offer: '',
+    is_offer: false
   });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -41,11 +43,13 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         price_sell: editProduct.price_sell || '',
         stock: editProduct.stock || '',
         category_id: editProduct.category_id || '',
-        sell_by_weight: !!editProduct.sell_by_weight
+        sell_by_weight: !!editProduct.sell_by_weight,
+        price_offer: editProduct.price_offer || '',
+        is_offer: !!editProduct.is_offer
       });
       setPreview(editProduct.image_url ? `${editProduct.image_url}` : null);
     } else {
-      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false });
+      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false });
       setPreview(null);
       setImage(null);
     }
@@ -103,7 +107,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       value = e.target.checked;
     }
 
-    if (['stock', 'price_buy', 'price_sell'].includes(name)) {
+    if (['stock', 'price_buy', 'price_sell', 'price_offer'].includes(name)) {
       if (parseFloat(value) < 0) {
         toast.error('No se permiten valores negativos');
         return;
@@ -217,7 +221,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         handleClose();
       } else {
         // Si es nuevo, limpiar el formulario y mantener abierto
-        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false });
+        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false });
         setImage(null);
         setPreview(null);
         setError('');
@@ -427,6 +431,37 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                 />
                 <Form.Text className="text-muted">
                   Habilitar esto para que el sistema solicite el peso al vender este producto.
+                </Form.Text>
+              </Form.Group>
+
+              <hr />
+              <h5 className="mb-3 text-danger">🎁 Configuración de Oferta</h5>
+              
+              <Form.Group className="mb-3">
+                <Form.Check 
+                  type="switch"
+                  id="is-offer-switch"
+                  label="ACTIVAR OFERTA"
+                  name="is_offer"
+                  checked={formData.is_offer}
+                  onChange={handleInputChange}
+                  className="fw-bold text-danger"
+                />
+              </Form.Group>
+
+              <Form.Group className="mb-3">
+                <Form.Label>Precio de Oferta ($)</Form.Label>
+                <Form.Control 
+                  type="number" 
+                  name="price_offer" 
+                  value={formData.price_offer} 
+                  onChange={handleInputChange} 
+                  step="0.01"
+                  placeholder="Ej: 999.99"
+                  disabled={!formData.is_offer}
+                />
+                <Form.Text className="text-muted">
+                  Este es el precio que se cobrará mientras la oferta esté activa.
                 </Form.Text>
               </Form.Group>
             </Col>

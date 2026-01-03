@@ -17,13 +17,29 @@ exports.createSale = async (req, res) => {
       created_at: created_at || trx.fn.now(),
     });
 
-    const saleItems = items.map((item) => ({
-      sale_id: id,
-      product_id: item.product_id,
-      quantity: item.quantity,
-      price_unit: item.price_unit,
-      subtotal: item.subtotal,
-    }));
+    const saleItems = await Promise.all(
+      items.map(async (item) => {
+        const product = await trx("products")
+          .where({ id: item.product_id })
+          .first();
+        // Sugerencia: El cliente envía item.price_unit.
+        // Calculamos el descuento comparando con el precio_sell original del producto.
+        const discount = Math.max(
+          0,
+          (product.price_sell || 0) - item.price_unit
+        );
+
+        return {
+          sale_id: id,
+          product_id: item.product_id,
+          quantity: item.quantity,
+          price_unit: item.price_unit,
+          subtotal: item.subtotal,
+          cost_at_sale: product.price_buy || 0,
+          discount_amount: discount,
+        };
+      })
+    );
 
     await trx("sale_items").insert(saleItems);
 

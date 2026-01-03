@@ -14,7 +14,9 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
     price_sell: '',
     stock: '',
     category_id: '',
-    sell_by_weight: false
+    sell_by_weight: false,
+    price_offer: '',
+    is_offer: false
   });
   
   const [categories, setCategories] = useState([]);
@@ -37,7 +39,9 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
         price_sell: '',
         stock: '',
         category_id: '',
-        sell_by_weight: false
+        sell_by_weight: false,
+        price_offer: '',
+        is_offer: false
       });
       setImage(null);
       setPreview(null);
@@ -78,7 +82,7 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
       newValue = capitalizeWords(value);
     }
 
-    if (['stock', 'price_buy', 'price_sell'].includes(name)) {
+    if (['stock', 'price_buy', 'price_sell', 'price_offer'].includes(name)) {
       if (parseFloat(value) < 0) {
         toast.error('No se permiten valores negativos');
         return;
@@ -347,7 +351,34 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
               />
             </Col>
 
-            <Col xs={12} className="mt-3">
+            <Col xs={12}>
+                <div className="bg-light p-3 rounded-3 mb-3">
+                  <Form.Check 
+                    type="switch"
+                    id="add-is-offer"
+                    label="Activar Oferta"
+                    name="is_offer"
+                    className="fw-bold text-danger mb-2"
+                    checked={formData.is_offer}
+                    onChange={handleInputChange}
+                  />
+                  {formData.is_offer && (
+                    <Form.Group>
+                      <Form.Label className="small fw-bold mb-1">Precio de Oferta ($)</Form.Label>
+                      <Form.Control 
+                        type="number"
+                        name="price_offer"
+                        placeholder="0.00"
+                        value={formData.price_offer}
+                        onChange={handleInputChange}
+                        step="0.01"
+                      />
+                    </Form.Group>
+                  )}
+                </div>
+            </Col>
+
+            <Col xs={12} className="mt-2">
               <Button 
                 variant="primary" 
                 type="submit" 

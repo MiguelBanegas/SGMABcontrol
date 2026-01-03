@@ -140,13 +140,14 @@ const Sales = () => {
       return;
     }
 
+    const finalPrice = product.is_offer && product.price_offer ? product.price_offer : product.price_sell;
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
       setCart(cart.map(item => 
         item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
       ));
     } else {
-      setCart([...cart, { ...product, quantity: 1 }]);
+      setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: 1 }]);
     }
     setSearchTerm('');
     setSearchResults([]);
@@ -163,6 +164,7 @@ const Sales = () => {
     }
 
     const product = currentWeightProduct;
+    const finalPrice = product.is_offer && product.price_offer ? product.price_offer : product.price_sell;
     const existing = cart.find(item => item.id === product.id);
     
     if (existing) {
@@ -170,7 +172,7 @@ const Sales = () => {
         item.id === product.id ? { ...item, quantity: item.quantity + weight } : item
       ));
     } else {
-      setCart([...cart, { ...product, quantity: weight }]);
+      setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: weight }]);
     }
 
     setShowWeightModal(false);
@@ -371,7 +373,15 @@ const Sales = () => {
                           <div className="text-muted x-small">SKU: {p.sku}</div>
                         </div>
                       </div>
-                      <div className="text-primary fw-bold">${p.price_sell}</div>
+                      <div className="text-end">
+                        {p.is_offer && (
+                          <div className="text-decoration-line-through text-muted small">${p.price_sell}</div>
+                        )}
+                        <div className={`fw-bold ${p.is_offer ? 'text-success' : 'text-primary'}`}>
+                          ${p.is_offer ? p.price_offer : p.price_sell}
+                        </div>
+                        {p.is_offer && <Badge bg="danger" size="sm">OFERTA</Badge>}
+                      </div>
                     </ListGroup.Item>
                   ))}
                 </ListGroup>
@@ -397,6 +407,7 @@ const Sales = () => {
                         </td>
                         <td>
                           <div className="fw-bold">{item.name}</div>
+                          {item.is_offer && <Badge bg="danger" className="x-small">OFERTA</Badge>}
                         </td>
                         <td className="text-center">
                           <div className="d-flex align-items-center justify-content-center gap-2">
@@ -418,7 +429,10 @@ const Sales = () => {
                             )}
                           </div>
                         </td>
-                        <td className="text-end">${item.price_sell}</td>
+                        <td className="text-end">
+                          {item.is_offer && <div className="text-muted x-small text-decoration-line-through">${item.original_price_sell}</div>}
+                          ${item.price_sell}
+                        </td>
                         <td className="text-end fw-bold">${(item.price_sell * item.quantity).toFixed(2)}</td>
                         <td className="text-end">
                           <Button variant="link" className="text-danger p-0" onClick={() => removeFromCart(item.id)}>

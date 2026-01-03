@@ -18,7 +18,9 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
   const [prices, setPrices] = useState({
     price_buy: product?.price_buy || '',
     price_sell: product?.price_sell || '',
-    category_id: product?.category_id || ''
+    category_id: product?.category_id || '',
+    price_offer: product?.price_offer || '',
+    is_offer: !!product?.is_offer
   });
 
   const [categories, setCategories] = useState([]);
@@ -36,7 +38,9 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
       setPrices({
         price_buy: product.price_buy || '',
         price_sell: product.price_sell || '',
-        category_id: product.category_id || ''
+        category_id: product.category_id || '',
+        price_offer: product.price_offer || '',
+        is_offer: !!product.is_offer
       });
       setPreview(null);
       setImage(null);
@@ -92,6 +96,8 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
         price_sell: parseFloat(prices.price_sell),
         stock: parseFloat(product.stock),
         category_id: prices.category_id || null,
+        price_offer: prices.price_offer === '' ? null : parseFloat(prices.price_offer),
+        is_offer: !!prices.is_offer,
         sell_by_weight: product.sell_by_weight ? true : false
       };
 
@@ -245,8 +251,11 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
               <span className="fs-2 fw-bold text-dark">{displayStock}<small className="ms-1 text-muted fs-6">{product.sell_by_weight ? 'kg' : 'unid.'}</small></span>
             </div>
             <div className="text-end">
-              <label className="text-primary small d-block mb-0 fw-bold">Venta</label>
-              <span className="fs-3 fw-bold text-primary">${product.price_sell}</span>
+              <label className="text-primary small d-block mb-0 fw-bold">{product.is_offer ? 'Oferta' : 'Venta'}</label>
+              {product.is_offer && <div className="text-muted extra-small text-decoration-line-through">${product.price_sell}</div>}
+              <span className={`fs-3 fw-bold ${product.is_offer ? 'text-success' : 'text-primary'}`}>
+                ${product.is_offer ? product.price_offer : product.price_sell}
+              </span>
             </div>
           </div>
           <div className="d-flex gap-2">
@@ -303,6 +312,22 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
                       {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </Form.Select>
                   </Form.Group>
+                </Col>
+                <Col xs={6}>
+                  <Form.Group>
+                    <Form.Label className="extra-small mb-0">Oferta ($)</Form.Label>
+                    <Form.Control size="sm" type="number" value={prices.price_offer} onChange={e => setPrices({...prices, price_offer: e.target.value})} disabled={!prices.is_offer} />
+                  </Form.Group>
+                </Col>
+                <Col xs={6} className="d-flex align-items-center">
+                  <Form.Check 
+                    type="switch"
+                    id="edit-is-offer"
+                    label="Oferta Activa"
+                    className="extra-small fw-bold text-danger mt-3"
+                    checked={prices.is_offer}
+                    onChange={e => setPrices({...prices, is_offer: e.target.checked})}
+                  />
                 </Col>
                 <Col xs={12}>
                   <Button variant="primary" size="sm" className="w-100 mt-2" onClick={handleUpdatePrices} disabled={isAdjusting}>Guardar Cambios</Button>
