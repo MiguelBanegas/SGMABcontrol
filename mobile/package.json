@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "cap:sync": "npx cap sync android",
     "android:open": "npx cap open android",
-    "android:build": "pwsh ./build-app.ps1"
+    "android:build": "powershell ./build-app.ps1"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.0.0",
