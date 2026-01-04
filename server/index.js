@@ -20,7 +20,7 @@ const io = new Server(server, {
   },
 });
 
-const WEB_VERSION = "1.1.2";
+const WEB_VERSION = "1.2.0";
 const MOBILE_VERSION = "1.0.1";
 
 app.set("io", io);
