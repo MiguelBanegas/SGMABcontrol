@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { ShoppingCart, Package, Users, LogOut } from 'lucide-react';
+import { ShoppingCart, Package, Users, LogOut, Receipt } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Stock from './components/Stock';
 import Sales from './components/Sales';
+import MySales from './components/MySales';
 import Admin from './components/Admin';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
@@ -72,6 +73,9 @@ function AppContent() {
               <Nav.Link as={Link} to="/sales" className="px-3">
                 <ShoppingCart className="me-1" size={18} /> Ventas
               </Nav.Link>
+              <Nav.Link as={Link} to="/my-sales" className="px-3">
+                <Receipt className="me-1" size={18} /> Mis Ventas
+              </Nav.Link>
               <Nav.Link as={Link} to="/stock" className="px-3">
                 <Package className="me-1" size={18} /> Stock
               </Nav.Link>
@@ -98,6 +102,7 @@ function AppContent() {
             user.role === 'vendedor' ? <Navigate to="/sales" replace /> : <Home />
           } />
           <Route path="/sales" element={<Sales />} />
+          <Route path="/my-sales" element={<MySales />} />
           <Route path="/stock" element={<Stock />} />
           <Route path="/admin" element={
             user.role === 'admin' ? <Admin /> : <Navigate to="/" replace />

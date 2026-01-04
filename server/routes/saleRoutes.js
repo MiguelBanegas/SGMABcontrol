@@ -13,4 +13,12 @@ router.patch(
   saleController.toggleSaleStatus
 );
 
+// Rutas para ventas en progreso
+router.get("/pending", verifyToken, saleController.getPendingSale);
+router.post("/pending", verifyToken, saleController.savePendingSale);
+router.delete("/pending", verifyToken, saleController.clearPendingSale);
+
+// Ruta para obtener ventas del vendedor
+router.get("/my-sales", verifyToken, saleController.getMySales);
+
 module.exports = router;

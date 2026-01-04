@@ -15,7 +15,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "Fallo la sincronizacion de Capacitor"; e
 
 # 3. Gradle Build
 Write-Host "[3/3] Generando APK con Gradle..." -ForegroundColor Yellow
-cd android
+Set-Location android
 ./gradlew assembleDebug
 if ($LASTEXITCODE -ne 0) { Write-Error "Fallo la generacion del APK con Gradle"; exit $LASTEXITCODE }
 
@@ -23,8 +23,9 @@ $apkPath = "app/build/outputs/apk/debug/app-debug.apk"
 if (Test-Path $apkPath) {
     Write-Host "Exito! APK generado correctamente en:" -ForegroundColor Green
     Write-Host (Get-Item $apkPath).FullName -ForegroundColor White
-} else {
+}
+else {
     Write-Warning "El APK no se encuentra en la ruta esperada."
 }
 
-cd ..
+Set-Location ..

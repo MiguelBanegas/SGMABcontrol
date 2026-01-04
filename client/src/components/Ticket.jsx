@@ -43,6 +43,7 @@ const Ticket = React.forwardRef(({ sale }, ref) => {
               <td style={{ verticalAlign: 'top' }}>{item.quantity}</td>
               <td style={{ verticalAlign: 'top', paddingRight: '5px' }}>
                 {item.product_name}
+                {item.discount_amount > 0 && <span style={{fontSize: '9px', marginLeft: '4px'}}>(PROMO)</span>}
                 <br />
                 <small>@ ${item.price_unit}</small>
               </td>
@@ -51,6 +52,12 @@ const Ticket = React.forwardRef(({ sale }, ref) => {
           ))}
         </tbody>
       </table>
+
+      {sale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0) > 0 && (
+        <div style={{ textAlign: 'right', fontSize: '11px', color: '#333' }}>
+          Su ahorro: ${sale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0).toFixed(2)}
+        </div>
+      )}
 
       <p style={{ margin: '5px 0' }}>--------------------------------</p>
       

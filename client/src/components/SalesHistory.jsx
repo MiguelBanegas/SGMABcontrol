@@ -355,23 +355,36 @@ const SalesHistory = () => {
                   <tr>
                     <th>Producto</th>
                     <th className="text-center">Cant.</th>
-                    <th className="text-end">P. Unit</th>
+                    <th className="text-end">P. Lista</th>
+                    <th className="text-end">Desc.</th>
                     <th className="text-end">Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selectedSale.items.map((item, idx) => (
                     <tr key={idx}>
-                      <td>{item.product_name}</td>
+                      <td>
+                        {item.product_name}
+                        {item.discount_amount > 0 && (
+                          <Badge bg="success" className="ms-2 extra-small">OFERTA</Badge>
+                        )}
+                      </td>
                       <td className="text-center">{item.quantity}</td>
-                      <td className="text-end">${item.price_unit}</td>
+                      <td className="text-end text-muted small">${(Number(item.price_unit) + Number(item.discount_amount)).toFixed(2)}</td>
+                      <td className="text-end text-success">${Number(item.discount_amount).toFixed(2)}</td>
                       <td className="text-end fw-bold">${item.subtotal}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
+                  {selectedSale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0) > 0 && (
+                    <tr className="table-success opacity-75">
+                      <th colSpan="4" className="text-end small">AHORRO TOTAL</th>
+                      <th className="text-end small">-${selectedSale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0).toFixed(2)}</th>
+                    </tr>
+                  )}
                   <tr>
-                    <th colSpan="3" className="text-end">TOTAL</th>
+                    <th colSpan="4" className="text-end">TOTAL</th>
                     <th className="text-end text-primary h5">${Number(selectedSale.total || 0).toFixed(2)}</th>
                   </tr>
                 </tfoot>

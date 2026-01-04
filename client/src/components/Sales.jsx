@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import socket from '../socket';
 import CustomerModal from './CustomerModal';
 import { User, UserPlus } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const Sales = () => {
   const [cart, setCart] = useState(() => {
@@ -16,6 +17,7 @@ const Sales = () => {
     return saved ? JSON.parse(saved) : [];
   });
   const [searchTerm, setSearchTerm] = useState('');
+  const { user } = useAuth();
   const [searchResults, setSearchResults] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -33,7 +35,122 @@ const Sales = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [currentWeightProduct, setCurrentWeightProduct] = useState(null);
   const [inputWeight, setInputWeight] = useState('');
+  const [weightUnit, setWeightUnit] = useState('gr'); // 'gr' o 'kg'
   const weightInputRef = useRef(null);
+  const [lastAddedProductId, setLastAddedProductId] = useState(null);
+  const [syncStatus, setSyncStatus] = useState('synced'); // 'syncing', 'synced', 'error'
+  const saveTimeoutRef = useRef(null);
+  const [isSearching, setIsSearching] = useState(false);
+  // Función para imprimir ticket directamente
+  const printTicket = (saleData) => {
+    const printWindow = window.open('', '_blank', 'width=300,height=600');
+    if (!printWindow) {
+      toast.error('Por favor habilite ventanas emergentes para imprimir');
+      return;
+    }
+
+    const ticketHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Ticket de Venta</title>
+        <style>
+          @page { size: 80mm auto; margin: 0; }
+          body { 
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            margin: 0;
+            padding: 5mm;
+            width: 80mm;
+          }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .bold { font-weight: bold; }
+          table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+          th { text-align: left; border-bottom: 1px solid black; padding-bottom: 3px; }
+          td { vertical-align: top; padding: 2px 0; }
+          .separator { margin: 5px 0; }
+          @media print {
+            body { margin: 0; padding: 5mm; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="center">
+          <h2 style="margin: 0; font-size: 18px;">SGMAB CONTROL</h2>
+          <p style="margin: 2px 0;">Comercio & Gestión</p>
+          <p style="margin: 2px 0;">--------------------------------</p>
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+          <p style="margin: 2px 0;"><b>Fecha:</b> ${new Date(saleData.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+          <p style="margin: 2px 0;"><b>Vendedor:</b> ${saleData.seller_name}</p>
+          <p style="margin: 2px 0;"><b>Cliente:</b> ${saleData.customer_name}</p>
+        </div>
+        
+        <p class="separator">--------------------------------</p>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>Cant</th>
+              <th>Producto</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${saleData.items.map(item => `
+              <tr>
+                <td>${item.quantity}</td>
+                <td style="padding-right: 5px;">
+                  ${item.product_name}
+                  ${item.discount_amount > 0 ? '<span style="font-size: 9px; margin-left: 4px;">(PROMO)</span>' : ''}
+                  <br/>
+                  <small>@ $${item.price_unit}</small>
+                </td>
+                <td class="right">$${item.subtotal}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        
+        ${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0) > 0 ? `
+          <div class="right" style="font-size: 11px; color: #333;">
+            Su ahorro: $${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0).toFixed(2)}
+          </div>
+        ` : ''}
+        
+        <p class="separator">--------------------------------</p>
+        
+        <div class="right" style="font-size: 16px;">
+          <b>TOTAL: $${saleData.total}</b>
+        </div>
+        <div class="right" style="font-size: 11px; margin-top: 5px;">
+          <i>Pago: ${saleData.payment_method || 'Efectivo'}</i>
+        </div>
+        
+        <div class="center" style="margin-top: 20px;">
+          <p style="margin: 2px 0; font-size: 10px;">¡Gracias por su compra!</p>
+          <p style="margin: 2px 0; font-size: 8px;">ID: ${saleData.id.slice(0, 8)}</p>
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+              setTimeout(function() { window.close(); }, 100);
+            }, 250);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(ticketHTML);
+    printWindow.document.close();
+  };
 
   // Refs para evitar clausuras obsoletas en el listener global de F10
   const cartRef = useRef(cart);
@@ -108,23 +225,104 @@ const Sales = () => {
     };
   }, []);
 
-  // Persistencia de venta parcial
+  // Cargar venta en progreso al montar el componente
   useEffect(() => {
+    const loadPendingSale = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get('/api/sales/pending', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.data && response.data.cart && response.data.cart.length > 0) {
+          setCart(response.data.cart);
+          
+          // Cargar cliente si existe
+          if (response.data.customer_id) {
+            const customer = customers.find(c => c.id === response.data.customer_id);
+            if (customer) {
+              setSelectedCustomer(customer);
+            }
+          }
+          
+          // Cargar método de pago
+          if (response.data.payment_method) {
+            setPaymentMethod(response.data.payment_method);
+          }
+          
+          toast.success('Venta en progreso cargada', { duration: 3000, icon: '📋' });
+        }
+      } catch (error) {
+        console.error('Error al cargar venta en progreso:', error);
+        // Fallback a localStorage si falla el servidor
+        const saved = localStorage.getItem('pending_sale');
+        if (saved) {
+          setCart(JSON.parse(saved));
+        }
+      }
+    };
+    
+    loadPendingSale();
+  }, [customers]);
+
+  // Guardar venta en progreso (localStorage inmediato + servidor con debounce)
+  useEffect(() => {
+    // Guardar en localStorage inmediatamente
     localStorage.setItem('pending_sale', JSON.stringify(cart));
-  }, [cart]);
+    
+    // Guardar en servidor con debounce
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    if (cart.length > 0) {
+      setSyncStatus('syncing');
+      
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          const token = localStorage.getItem('token');
+          await axios.post('/api/sales/pending', {
+            cart,
+            customer_id: selectedCustomer?.id || null,
+            payment_method: paymentMethod
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          setSyncStatus('synced');
+        } catch (error) {
+          console.error('Error al guardar venta en progreso:', error);
+          setSyncStatus('error');
+          // Mantener en localStorage como fallback
+        }
+      }, 2000); // Debounce de 2 segundos
+    }
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [cart, selectedCustomer, paymentMethod]);
 
   const handleSearch = async (term) => {
     setSearchTerm(term);
     if (term.length > 1) {
-      const results = await db.products
-        .filter(p => p.name.toLowerCase().includes(term.toLowerCase()) || p.sku.includes(term))
-        .limit(5)
-        .toArray();
-      setSearchResults(results);
-      setSelectedIndex(results.length > 0 ? 0 : -1);
+      setIsSearching(true);
+      try {
+        const results = await db.products
+          .filter(p => p.name.toLowerCase().includes(term.toLowerCase()) || p.sku.includes(term))
+          .limit(5)
+          .toArray();
+        setSearchResults(results);
+        setSelectedIndex(results.length > 0 ? 0 : -1);
+      } finally {
+        setIsSearching(false);
+      }
     } else {
       setSearchResults([]);
       setSelectedIndex(-1);
+      setIsSearching(false);
     }
   };
 
@@ -132,6 +330,7 @@ const Sales = () => {
     if (product.sell_by_weight) {
       setCurrentWeightProduct(product);
       setInputWeight('');
+      setWeightUnit('gr'); // Resetear a gramos por defecto
       setShowWeightModal(true);
       setSearchTerm('');
       setSearchResults([]);
@@ -149,6 +348,11 @@ const Sales = () => {
     } else {
       setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: 1 }]);
     }
+    
+    // Activar efecto de highlight
+    setLastAddedProductId(product.id);
+    setTimeout(() => setLastAddedProductId(null), 2000);
+    
     setSearchTerm('');
     setSearchResults([]);
     setSelectedIndex(-1);
@@ -157,10 +361,16 @@ const Sales = () => {
 
   const handleWeightSubmit = (e) => {
     e.preventDefault();
-    const weight = parseFloat(inputWeight);
+    let weight = parseFloat(inputWeight);
+    
     if (isNaN(weight) || weight <= 0) {
       toast.error('Ingrese un peso válido');
       return;
+    }
+
+    // Convertir gramos a kilogramos si es necesario
+    if (weightUnit === 'gr') {
+      weight = weight / 1000; // Convertir gramos a kg
     }
 
     const product = currentWeightProduct;
@@ -175,23 +385,63 @@ const Sales = () => {
       setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: weight }]);
     }
 
+    // Activar efecto de highlight
+    setLastAddedProductId(product.id);
+    setTimeout(() => setLastAddedProductId(null), 2000);
+
     setShowWeightModal(false);
     setCurrentWeightProduct(null);
     setInputWeight('');
+    setWeightUnit('gr'); // Resetear a gramos
     scanInputRef.current?.focus();
   };
 
-  const handleKeyDown = (e) => {
-    if (searchResults.length > 0) {
+  const handleKeyDown = async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      
+      // Si hay resultados visibles y uno seleccionado, agregar ese
+      if (searchResults.length > 0 && selectedIndex >= 0) {
+        addToCart(searchResults[selectedIndex]);
+        return;
+      }
+      
+      // Si no hay resultados visibles pero hay un término de búsqueda,
+      // buscar por SKU exacto (para lectores de código de barras)
+      if (searchTerm.trim()) {
+        const exactMatch = await db.products
+          .where('sku')
+          .equals(searchTerm.trim())
+          .first();
+        
+        if (exactMatch) {
+          addToCart(exactMatch);
+          toast.success(`Producto agregado: ${exactMatch.name}`, { duration: 2000 });
+        } else {
+          // Si no hay coincidencia exacta, buscar por nombre o SKU parcial
+          const results = await db.products
+            .filter(p => 
+              p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+              p.sku.includes(searchTerm)
+            )
+            .limit(1)
+            .toArray();
+          
+          if (results.length > 0) {
+            addToCart(results[0]);
+            toast.success(`Producto agregado: ${results[0].name}`, { duration: 2000 });
+          } else {
+            toast.error('Producto no encontrado', { duration: 2000 });
+          }
+        }
+      }
+    } else if (searchResults.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedIndex(prev => (prev < searchResults.length - 1 ? prev + 1 : prev));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedIndex(prev => (prev > 0 ? prev - 1 : prev));
-      } else if (e.key === 'Enter' && selectedIndex >= 0) {
-        e.preventDefault();
-        addToCart(searchResults[selectedIndex]);
       }
     }
   };
@@ -296,6 +546,16 @@ const Sales = () => {
       
       setCart([]);
       
+      // Limpiar venta en progreso del servidor
+      try {
+        const token = localStorage.getItem('token');
+        await axios.delete('/api/sales/pending', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+      } catch (error) {
+        console.error('Error al limpiar venta en progreso:', error);
+      }
+      
       // Intentar resetear al cliente Cons. Final por defecto usando el ref más actualizado
       const defaultCustomer = customersRef.current.find(c => c.name.toLowerCase().includes('cons. final'));
       setSelectedCustomer(defaultCustomer || null);
@@ -312,6 +572,21 @@ const Sales = () => {
         duration: 4000,
         icon: '💰',
       });
+
+      // Imprimir ticket automáticamente
+      const ticketData = {
+        ...saleData,
+        seller_name: user?.username || 'Vendedor',
+        customer_name: currentCustomer?.name || 'Anónimo',
+        items: currentCart.map(item => ({
+          ...item,
+          product_name: item.name,
+          discount_amount: item.is_offer ? (Number(item.original_price_sell) - Number(item.price_sell)) : 0
+        }))
+      };
+
+      // Impresión automática desactivada - usar "Mis Ventas" para reimprimir
+      // setTimeout(() => printTicket(ticketData), 500);
     } catch (err) {
       console.error(err);
       toast.error('Error al procesar la venta');
@@ -355,7 +630,20 @@ const Sales = () => {
                 />
               </InputGroup>
 
-              {searchResults.length > 0 && (
+              {/* Indicador de búsqueda */}
+              {isSearching && (
+                <div className="position-absolute w-100 bg-white border rounded shadow-sm p-3 text-center" style={{ zIndex: 1000, marginTop: '-15px' }}>
+                  <div className="d-flex align-items-center justify-content-center gap-2">
+                    <div className="spinner-border spinner-border-sm text-primary" role="status">
+                      <span className="visually-hidden">Buscando...</span>
+                    </div>
+                    <span className="text-muted">Buscando productos...</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Resultados de búsqueda */}
+              {!isSearching && searchResults.length > 0 && (
                 <ListGroup className="position-absolute w-100 shadow-lg" style={{ zIndex: 1000, marginTop: '-15px' }}>
                   {searchResults.map((p, idx) => (
                     <ListGroup.Item 
@@ -387,6 +675,13 @@ const Sales = () => {
                 </ListGroup>
               )}
 
+              {/* Sin resultados */}
+              {!isSearching && searchTerm.length > 1 && searchResults.length === 0 && (
+                <div className="position-absolute w-100 bg-white border rounded shadow-sm p-3 text-center text-muted" style={{ zIndex: 1000, marginTop: '-15px' }}>
+                  🔍 No se encontraron productos
+                </div>
+              )}
+
               <div className="table-responsive mt-4" style={{ minHeight: '400px' }}>
                 <Table hover align="middle">
                   <thead>
@@ -401,7 +696,14 @@ const Sales = () => {
                   </thead>
                   <tbody>
                     {cart.map(item => (
-                      <tr key={item.id}>
+                      <tr 
+                        key={item.id}
+                        className={lastAddedProductId === item.id ? 'table-success' : ''}
+                        style={{
+                          transition: 'background-color 0.3s ease',
+                          backgroundColor: lastAddedProductId === item.id ? '#d1e7dd' : 'transparent'
+                        }}
+                      >
                         <td className="text-muted small">
                           ...{item.sku ? item.sku.slice(-3) : '---'}
                         </td>
@@ -460,11 +762,20 @@ const Sales = () => {
           <Card className="border-0 shadow-sm bg-dark text-white p-4 sticky-top" style={{ top: '2rem' }}>
             <div className="d-flex justify-content-between align-items-center mb-4">
               <h4 className="mb-0">Resumen</h4>
-              {isOnline ? (
-                <Badge bg="success"><Wifi size={14} className="me-1" /> Online</Badge>
-              ) : (
-                <Badge bg="danger"><WifiOff size={14} className="me-1" /> Offline</Badge>
-              )}
+              <div className="d-flex gap-2">
+                {isOnline ? (
+                  <Badge bg="success"><Wifi size={14} className="me-1" /> Online</Badge>
+                ) : (
+                  <Badge bg="danger"><WifiOff size={14} className="me-1" /> Offline</Badge>
+                )}
+                {cart.length > 0 && (
+                  <Badge bg={syncStatus === 'synced' ? 'success' : syncStatus === 'syncing' ? 'warning' : 'danger'}>
+                    {syncStatus === 'syncing' && '⏳ Guardando...'}
+                    {syncStatus === 'synced' && '✓ Guardado'}
+                    {syncStatus === 'error' && '⚠️ Error'}
+                  </Badge>
+                )}
+              </div>
             </div>
             
             <div className="d-flex justify-content-between mb-2 opacity-75">
@@ -622,23 +933,54 @@ const Sales = () => {
                <h4 className="text-dark">{currentWeightProduct?.name}</h4>
                <div className="text-muted">Precio por Kg: ${currentWeightProduct?.price_sell}</div>
             </div>
+            
+            {/* Selector de Unidad */}
+            <div className="mb-3">
+              <div className="btn-group w-100" role="group">
+                <Button
+                  variant={weightUnit === 'gr' ? 'primary' : 'outline-primary'}
+                  onClick={() => setWeightUnit('gr')}
+                  className="fw-bold"
+                >
+                  Gramos (gr)
+                </Button>
+                <Button
+                  variant={weightUnit === 'kg' ? 'primary' : 'outline-primary'}
+                  onClick={() => setWeightUnit('kg')}
+                  className="fw-bold"
+                >
+                  Kilogramos (Kg)
+                </Button>
+              </div>
+            </div>
+            
             <Form.Group>
-              <Form.Label className="fw-bold">Peso (Kg)</Form.Label>
+              <Form.Label className="fw-bold">
+                Peso ({weightUnit === 'gr' ? 'Gramos' : 'Kilogramos'})
+              </Form.Label>
               <InputGroup size="lg">
                 <Form.Control 
                   ref={weightInputRef}
                   type="number" 
-                  step="0.001"
-                  placeholder="0.000"
+                  step={weightUnit === 'gr' ? '1' : '0.001'}
+                  placeholder={weightUnit === 'gr' ? '0' : '0.000'}
                   value={inputWeight}
                   onChange={(e) => setInputWeight(e.target.value)}
                   required
                 />
-                <InputGroup.Text>Kg</InputGroup.Text>
+                <InputGroup.Text>{weightUnit === 'gr' ? 'gr' : 'Kg'}</InputGroup.Text>
               </InputGroup>
               {inputWeight && !isNaN(parseFloat(inputWeight)) && (
-                <div className="mt-3 text-center h3 text-primary">
-                  Total: ${(parseFloat(inputWeight) * parseFloat(currentWeightProduct?.price_sell || 0)).toFixed(2)}
+                <div className="mt-3">
+                  <div className="text-center text-muted small">
+                    {weightUnit === 'gr' && `${parseFloat(inputWeight)} gr = ${(parseFloat(inputWeight) / 1000).toFixed(3)} Kg`}
+                  </div>
+                  <div className="text-center h3 text-primary mt-2">
+                    Total: ${(
+                      (weightUnit === 'gr' ? parseFloat(inputWeight) / 1000 : parseFloat(inputWeight)) * 
+                      parseFloat(currentWeightProduct?.price_sell || 0)
+                    ).toFixed(2)}
+                  </div>
                 </div>
               )}
             </Form.Group>

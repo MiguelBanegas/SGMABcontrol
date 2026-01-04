@@ -67,9 +67,13 @@ exports.createSale = async (req, res) => {
 exports.getSalesStats = async (req, res) => {
   try {
     const stats = await db("sales")
+      .leftJoin("sale_items", "sales.id", "sale_items.sale_id")
       .select(
-        db.raw("DATE(created_at) as date"),
-        db.raw("SUM(total)::FLOAT as total_day")
+        db.raw("DATE(sales.created_at) as date"),
+        db.raw("SUM(DISTINCT sales.total)::FLOAT as total_day"),
+        db.raw(
+          "SUM(sale_items.subtotal - (sale_items.quantity * sale_items.cost_at_sale))::FLOAT as profit_day"
+        )
       )
       .groupBy("date")
       .orderBy("date", "desc")
@@ -121,5 +125,108 @@ exports.toggleSaleStatus = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error al actualizar estado" });
+  }
+};
+
+// Obtener venta en progreso del usuario
+exports.getPendingSale = async (req, res) => {
+  const user_id = req.user.id;
+
+  try {
+    const pendingSale = await db("pending_sales").where({ user_id }).first();
+
+    if (!pendingSale) {
+      return res.json(null);
+    }
+
+    res.json({
+      cart: JSON.parse(pendingSale.cart_data),
+      customer_id: pendingSale.customer_id,
+      payment_method: pendingSale.payment_method,
+      updated_at: pendingSale.updated_at,
+    });
+  } catch (error) {
+    console.error("Error en getPendingSale:", error);
+    res.status(500).json({ message: "Error al obtener venta en progreso" });
+  }
+};
+
+// Guardar/actualizar venta en progreso
+exports.savePendingSale = async (req, res) => {
+  const user_id = req.user.id;
+  const { cart, customer_id, payment_method } = req.body;
+
+  try {
+    const cartData = JSON.stringify(cart);
+
+    // Verificar si ya existe una venta en progreso para este usuario
+    const existing = await db("pending_sales").where({ user_id }).first();
+
+    if (existing) {
+      // Actualizar
+      await db("pending_sales")
+        .where({ user_id })
+        .update({
+          cart_data: cartData,
+          customer_id: customer_id || null,
+          payment_method: payment_method || "Efectivo",
+          updated_at: db.fn.now(),
+        });
+    } else {
+      // Insertar
+      await db("pending_sales").insert({
+        user_id,
+        cart_data: cartData,
+        customer_id: customer_id || null,
+        payment_method: payment_method || "Efectivo",
+      });
+    }
+
+    res.json({ message: "Venta en progreso guardada" });
+  } catch (error) {
+    console.error("Error en savePendingSale:", error);
+    res.status(500).json({ message: "Error al guardar venta en progreso" });
+  }
+};
+
+// Limpiar venta en progreso
+exports.clearPendingSale = async (req, res) => {
+  const user_id = req.user.id;
+
+  try {
+    await db("pending_sales").where({ user_id }).delete();
+    res.json({ message: "Venta en progreso eliminada" });
+  } catch (error) {
+    console.error("Error en clearPendingSale:", error);
+    res.status(500).json({ message: "Error al limpiar venta en progreso" });
+  }
+};
+
+// Obtener ventas del vendedor actual
+exports.getMySales = async (req, res) => {
+  const user_id = req.user.id;
+
+  try {
+    const sales = await db("sales")
+      .leftJoin("customers", "sales.customer_id", "customers.id")
+      .where({ "sales.user_id": user_id })
+      .select("sales.*", "customers.name as customer_name")
+      .orderBy("sales.created_at", "desc")
+      .limit(50); // Últimas 50 ventas
+
+    const salesWithItems = await Promise.all(
+      sales.map(async (sale) => {
+        const items = await db("sale_items")
+          .join("products", "sale_items.product_id", "products.id")
+          .where({ sale_id: sale.id })
+          .select("sale_items.*", "products.name as product_name");
+        return { ...sale, items };
+      })
+    );
+
+    res.json(salesWithItems);
+  } catch (error) {
+    console.error("Error en getMySales:", error);
+    res.status(500).json({ message: "Error al obtener ventas" });
   }
 };

@@ -109,41 +109,50 @@ const Admin = () => {
       <Tabs defaultActiveKey="stats" className="mb-4">
         <Tab eventKey="stats" title="Estadísticas">
           <Row className="mb-4 mt-3">
-            <Col md={4}>
+            <Col md={3}>
               <Card className="border-0 shadow-sm bg-primary text-white p-3">
                 <div className="d-flex justify-content-between">
                   <div>
-                    <div className="opacity-75 small">Ventas de Hoy</div>
-                    <h3 className="mb-0">${stats[0]?.total_day || 0}</h3>
+                    <div className="opacity-75 small">Facturado Hoy</div>
+                    <h3 className="mb-0">${Number(stats[0]?.total_day || 0).toFixed(2)}</h3>
                   </div>
                   <TrendingUp size={32} />
                 </div>
               </Card>
             </Col>
-            <Col md={4}>
+            <Col md={3}>
+              <Card className="border-0 shadow-sm bg-success text-white p-3">
+                <div className="d-flex justify-content-between">
+                  <div>
+                    <div className="opacity-75 small">Ganancia Hoy</div>
+                    <h3 className="mb-0">${Number(stats[0]?.profit_day || 0).toFixed(2)}</h3>
+                  </div>
+                  <BarChart3 size={32} />
+                </div>
+              </Card>
+            </Col>
+            <Col md={3}>
               <Card 
-                className={`border-0 shadow-sm p-3 cursor-pointer ${productStats.lowStock > 0 ? 'bg-warning text-dark' : ''}`}
-                style={{ cursor: 'pointer' }}
+                className={`border-0 shadow-sm p-3 h-100 cursor-pointer ${productStats.lowStock > 0 ? 'bg-warning text-dark' : ''}`}
                 onClick={() => productStats.lowStock > 0 && setShowLowStockModal(true)}
               >
                 <div className="d-flex justify-content-between">
                   <div>
                     <div className={`${productStats.lowStock > 0 ? 'opacity-75' : 'text-muted'} small`}>Bajo Stock</div>
                     <h3 className="mb-0">{productStats.lowStock} <span className="small fs-6">productos</span></h3>
-                    {productStats.lowStock > 0 && <small className="fw-bold">Ver detalles →</small>}
                   </div>
                   <Package size={32} className={productStats.lowStock > 0 ? 'text-dark' : 'text-warning'} />
                 </div>
               </Card>
             </Col>
-            <Col md={4}>
-              <Card className="border-0 shadow-sm p-3">
+            <Col md={3}>
+              <Card className="border-0 shadow-sm p-3 h-100">
                 <div className="d-flex justify-content-between">
                   <div>
                     <div className="text-muted small">Usuarios</div>
                     <h3 className="mb-0">{users.length}</h3>
                   </div>
-                  <Users size={32} className="text-success" />
+                  <Users size={32} className="text-info" />
                 </div>
               </Card>
             </Col>
@@ -158,7 +167,8 @@ const Admin = () => {
                 <thead>
                   <tr>
                     <th>Fecha</th>
-                    <th>Total Facturado</th>
+                    <th>Facturado</th>
+                    <th>Utilidad Est.</th>
                     <th>Estado</th>
                   </tr>
                 </thead>
@@ -166,13 +176,14 @@ const Admin = () => {
                   {stats.map((s, idx) => (
                     <tr key={idx}>
                       <td>{new Date(s.date).toLocaleDateString()}</td>
-                      <td className="fw-bold">${s.total_day}</td>
+                      <td className="fw-bold text-primary">${Number(s.total_day).toFixed(2)}</td>
+                      <td className="fw-bold text-success">${Number(s.profit_day).toFixed(2)}</td>
                       <td><Badge bg="success">Procesado</Badge></td>
                     </tr>
                   ))}
                   {stats.length === 0 && !loading && (
                     <tr>
-                      <td colSpan="3" className="text-center py-4 text-muted">No hay datos suficientes para mostrar</td>
+                      <td colSpan="4" className="text-center py-4 text-muted">No hay datos suficientes para mostrar</td>
                     </tr>
                   )}
                 </tbody>

@@ -8,13 +8,38 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    const token = localStorage.getItem('token');
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    // Forzar cierre de sesión al cargar la página
+    console.log('🔒 Cerrando sesión automáticamente...');
+    
+    // Limpiar localStorage completo excepto configuraciones del sistema
+    const keysToKeep = ['theme', 'language']; // Mantener solo configuraciones básicas
+    const allKeys = Object.keys(localStorage);
+    
+    allKeys.forEach(key => {
+      if (!keysToKeep.includes(key)) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Limpiar sessionStorage
+    sessionStorage.clear();
+    
+    // Limpiar headers de axios
+    delete axios.defaults.headers.common['Authorization'];
+    
+    // Forzar actualización del caché del navegador
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => {
+          caches.delete(name);
+        });
+      });
     }
+    
+    setUser(null);
     setLoading(false);
+    
+    console.log('✅ Sesión cerrada. Por favor inicie sesión nuevamente.');
   }, []);
 
   const login = (userData, token) => {
@@ -25,10 +50,41 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    console.log('🔒 Cerrando sesión...');
+    
     setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
+    
+    // Limpiar localStorage completo excepto configuraciones del sistema
+    const keysToKeep = ['theme', 'language'];
+    const allKeys = Object.keys(localStorage);
+    
+    allKeys.forEach(key => {
+      if (!keysToKeep.includes(key)) {
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Limpiar sessionStorage
+    sessionStorage.clear();
+    
+    // Limpiar headers de axios
     delete axios.defaults.headers.common['Authorization'];
+    
+    // Limpiar caché del navegador
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(name => {
+          caches.delete(name);
+        });
+      });
+    }
+    
+    console.log('✅ Sesión cerrada. Recargando página...');
+    
+    // Forzar recarga completa de la página (sin caché)
+    setTimeout(() => {
+      window.location.reload(true);
+    }, 100);
   };
 
   return (
