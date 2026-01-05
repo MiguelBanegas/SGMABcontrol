@@ -32,6 +32,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   const [showScanner, setShowScanner] = useState(false);
   const [error, setError] = useState('');
   const skuRef = useRef(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   React.useEffect(() => {
     if (editProduct) {
@@ -252,6 +253,20 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       toast.success('Categoría eliminada');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Error al eliminar categoría');
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!editProduct) return;
+    
+    try {
+      await axios.delete(`/api/products/${editProduct.id}`);
+      toast.success('Producto eliminado correctamente');
+      refreshProducts();
+      setShowDeleteConfirm(false);
+      handleClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Error al eliminar el producto');
     }
   };
 
@@ -499,11 +514,42 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
             </Col>
           </Row>
         </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={handleClose}>Cancelar</Button>
-          <Button variant="primary" type="submit">Guardar Producto</Button>
+        <Modal.Footer className="d-flex justify-content-between">
+          <div>
+            {editProduct && (
+              <Button 
+                variant="danger" 
+                onClick={() => setShowDeleteConfirm(true)}
+              >
+                Eliminar Producto
+              </Button>
+            )}
+          </div>
+          <div>
+            <Button variant="secondary" onClick={handleClose} className="me-2">Cancelar</Button>
+            <Button variant="primary" type="submit">Guardar Producto</Button>
+          </div>
         </Modal.Footer>
       </Form>
+      
+      {/* Modal de confirmación de eliminación */}
+      <Modal show={showDeleteConfirm} onHide={() => setShowDeleteConfirm(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Confirmar Eliminación</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <p>¿Estás seguro de que deseas eliminar el producto <strong>{editProduct?.name}</strong>?</p>
+          <p className="text-danger mb-0"><small>Esta acción no se puede deshacer.</small></p>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>
+            Cancelar
+          </Button>
+          <Button variant="danger" onClick={handleDelete}>
+            Eliminar
+          </Button>
+        </Modal.Footer>
+      </Modal>
       {showScanner && (
         <BarcodeScanner 
           onScan={(code) => { setFormData({...formData, sku: code}); setShowScanner(false); }} 
