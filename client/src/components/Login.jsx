@@ -35,7 +35,7 @@ const Login = () => {
           <Card.Body className="p-5">
             <h2 className="text-center mb-4 font-weight-bold" style={{ color: '#2563eb' }}>SGM Acceso</h2>
             {error && <Alert variant="danger">{error}</Alert>}
-            <Form onSubmit={handleSubmit}>
+            <Form onSubmit={handleSubmit} autoComplete="off">
               <Form.Group id="username" className="mb-3">
                 <Form.Label>Usuario</Form.Label>
                 <Form.Control 
@@ -44,6 +44,7 @@ const Login = () => {
                   onChange={(e) => setUsername(e.target.value)} 
                   required 
                   className="rounded-pill px-4"
+                  autoComplete="username"
                 />
               </Form.Group>
               <Form.Group id="password" className="mb-4">
@@ -54,6 +55,7 @@ const Login = () => {
                   onChange={(e) => setPassword(e.target.value)} 
                   required 
                   className="rounded-pill px-4"
+                  autoComplete="new-password"
                 />
               </Form.Group>
               <Button disabled={loading} className="w-100 rounded-pill btn-primary py-2" type="submit">
