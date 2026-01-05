@@ -9,19 +9,26 @@ function MySales() {
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedSale, setExpandedSale] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [total, setTotal] = useState(0);
   const { user } = useAuth();
 
   useEffect(() => {
-    loadSales();
-  }, []);
+    loadSales(currentPage);
+  }, [currentPage]);
 
-  const loadSales = async () => {
+  const loadSales = async (page = 1) => {
+    setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/sales/my-sales', {
+      const response = await axios.get(`/api/sales/my-sales?page=${page}&perPage=10`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setSales(response.data);
+      setSales(response.data.sales);
+      setTotalPages(response.data.totalPages);
+      setTotal(response.data.total);
+      setCurrentPage(response.data.currentPage);
     } catch (error) {
       console.error('Error al cargar ventas:', error);
       toast.error('Error al cargar el historial de ventas');
@@ -250,6 +257,36 @@ function MySales() {
                 ))}
               </tbody>
             </Table>
+          )}
+          
+          {/* Controles de paginación */}
+          {sales.length > 0 && (
+            <div className="d-flex justify-content-between align-items-center mt-3">
+              <div className="text-muted">
+                Mostrando {sales.length} de {total} ventas (máximo 100)
+              </div>
+              <div className="d-flex gap-2">
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(currentPage - 1)}
+                >
+                  Anterior
+                </Button>
+                <span className="align-self-center px-2">
+                  Página {currentPage} de {totalPages}
+                </span>
+                <Button
+                  variant="outline-primary"
+                  size="sm"
+                  disabled={currentPage === totalPages}
+                  onClick={() => setCurrentPage(currentPage + 1)}
+                >
+                  Siguiente
+                </Button>
+              </div>
+            </div>
           )}
         </Card.Body>
       </Card>

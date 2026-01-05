@@ -202,17 +202,38 @@ exports.clearPendingSale = async (req, res) => {
   }
 };
 
-// Obtener ventas del vendedor actual
+// Obtener ventas del vendedor actual con paginación
 exports.getMySales = async (req, res) => {
   const user_id = req.user.id;
+  const page = parseInt(req.query.page) || 1;
+  const perPage = parseInt(req.query.perPage) || 10;
+  const maxTotal = 100; // Máximo total de ventas
 
   try {
+    // Calcular offset
+    const offset = (page - 1) * perPage;
+
+    // Limitar a máximo 100 ventas totales
+    if (offset >= maxTotal) {
+      return res.json({ sales: [], total: 0, hasMore: false });
+    }
+
+    // Obtener total de ventas del usuario (limitado a 100)
+    const totalResult = await db("sales")
+      .where({ user_id })
+      .count("* as count")
+      .first();
+
+    const totalSales = Math.min(parseInt(totalResult.count), maxTotal);
+
+    // Obtener ventas de la página actual
     const sales = await db("sales")
       .leftJoin("customers", "sales.customer_id", "customers.id")
       .where({ "sales.user_id": user_id })
       .select("sales.*", "customers.name as customer_name")
       .orderBy("sales.created_at", "desc")
-      .limit(50); // Últimas 50 ventas
+      .limit(perPage)
+      .offset(offset);
 
     const salesWithItems = await Promise.all(
       sales.map(async (sale) => {
@@ -224,7 +245,14 @@ exports.getMySales = async (req, res) => {
       })
     );
 
-    res.json(salesWithItems);
+    res.json({
+      sales: salesWithItems,
+      total: totalSales,
+      currentPage: page,
+      perPage: perPage,
+      totalPages: Math.ceil(totalSales / perPage),
+      hasMore: offset + perPage < totalSales,
+    });
   } catch (error) {
     console.error("Error en getMySales:", error);
     res.status(500).json({ message: "Error al obtener ventas" });
