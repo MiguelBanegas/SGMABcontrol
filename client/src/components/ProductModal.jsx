@@ -41,7 +41,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         sku: editProduct.sku || '',
         price_buy: editProduct.price_buy || '',
         price_sell: editProduct.price_sell || '',
-        stock: editProduct.stock || '',
+        stock: editProduct.stock ? Math.floor(editProduct.stock) : '',
         category_id: editProduct.category_id || '',
         sell_by_weight: !!editProduct.sell_by_weight,
         price_offer: editProduct.price_offer || '',
@@ -416,7 +416,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
               </Row>
               <Form.Group className="mb-3">
                 <Form.Label>{editProduct ? 'Stock Actual' : 'Stock Inicial'}</Form.Label>
-                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="1" required />
+                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="0.001" required />
               </Form.Group>
 
               <Form.Group className="mb-3">

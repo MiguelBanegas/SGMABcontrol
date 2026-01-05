@@ -70,10 +70,10 @@ function AppContent() {
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">
             <Nav className="ms-auto flex-nowrap align-items-center">
-              <Nav.Link as={Link} to="/sales" className="px-3">
+              <Nav.Link as={Link} to="/ventas" className="px-3">
                 <ShoppingCart className="me-1" size={18} /> Ventas
               </Nav.Link>
-              <Nav.Link as={Link} to="/my-sales" className="px-3">
+              <Nav.Link as={Link} to="/mis-ventas" className="px-3">
                 <Receipt className="me-1" size={18} /> Mis Ventas
               </Nav.Link>
               <Nav.Link as={Link} to="/stock" className="px-3">
@@ -99,10 +99,10 @@ function AppContent() {
         <Routes>
           <Route path="/" element={
             user.role === 'admin' ? <Navigate to="/admin" replace /> : 
-            user.role === 'vendedor' ? <Navigate to="/sales" replace /> : <Home />
+            user.role === 'vendedor' ? <Navigate to="/ventas" replace /> : <Home />
           } />
-          <Route path="/sales" element={<Sales />} />
-          <Route path="/my-sales" element={<MySales />} />
+          <Route path="/ventas" element={<Sales />} />
+          <Route path="/mis-ventas" element={<MySales />} />
           <Route path="/stock" element={<Stock />} />
           <Route path="/admin" element={
             user.role === 'admin' ? <Admin /> : <Navigate to="/" replace />
