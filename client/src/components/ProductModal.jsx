@@ -416,7 +416,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
               </Row>
               <Form.Group className="mb-3">
                 <Form.Label>{editProduct ? 'Stock Actual' : 'Stock Inicial'}</Form.Label>
-                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="0.001" required />
+                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="1" required />
               </Form.Group>
 
               <Form.Group className="mb-3">
