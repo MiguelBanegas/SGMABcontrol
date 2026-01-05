@@ -204,6 +204,7 @@ exports.deleteProduct = async (req, res) => {
 exports.getCategories = async (req, res) => {
   try {
     const categories = await db("categories")
+      .where("active", true)
       .select("*")
       .orderBy("name", "asc");
     res.json(categories);
@@ -230,22 +231,12 @@ exports.createCategory = async (req, res) => {
 exports.deleteCategory = async (req, res) => {
   const { id } = req.params;
   try {
-    // Verificar si hay productos usando esta categoría
-    const productsCount = await db("products")
-      .where({ category_id: id })
-      .count("id as count")
-      .first();
-    if (parseInt(productsCount.count) > 0) {
-      return res.status(400).json({
-        message: "No se puede eliminar una categoría que contiene productos",
-      });
-    }
-
-    await db("categories").where({ id }).del();
-    res.json({ message: "Categoría eliminada" });
+    // Desactivación lógica en lugar de eliminación física
+    await db("categories").where({ id }).update({ active: false });
+    res.json({ message: "Categoría desactivada" });
   } catch (error) {
     console.error("Error en deleteCategory:", error);
-    res.status(500).json({ message: "Error al eliminar categoría" });
+    res.status(500).json({ message: "Error al desactivar categoría" });
   }
 };
 
