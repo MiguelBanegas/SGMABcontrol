@@ -226,7 +226,11 @@ const Sales = () => {
   }, []);
 
   // Cargar venta en progreso al montar el componente
+  const pendingSaleLoadedRef = useRef(false);
+  
   useEffect(() => {
+    if (pendingSaleLoadedRef.current) return; // Ya se cargó
+    
     const loadPendingSale = async () => {
       try {
         const token = localStorage.getItem('token');
@@ -251,6 +255,7 @@ const Sales = () => {
           }
           
           toast.success('Venta en progreso cargada', { duration: 3000, icon: '📋' });
+          pendingSaleLoadedRef.current = true; // Marcar como cargado
         }
       } catch (error) {
         console.error('Error al cargar venta en progreso:', error);
