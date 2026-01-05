@@ -4,6 +4,7 @@ exports.getAllProducts = async (req, res) => {
   try {
     const products = await db("products")
       .leftJoin("categories", "products.category_id", "categories.id")
+      .where("products.active", true)
       .select("products.*", "categories.name as category_name");
     res.json(products);
   } catch (error) {
@@ -15,7 +16,7 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductBySku = async (req, res) => {
   const { sku } = req.params;
   try {
-    const product = await db("products").where({ sku }).first();
+    const product = await db("products").where({ sku, active: true }).first();
     if (!product)
       return res.status(404).json({ message: "Producto no encontrado" });
     res.json(product);
@@ -82,13 +83,35 @@ exports.createProduct = async (req, res) => {
   };
 
   try {
+    // Verificar si existe un producto inactivo con el mismo SKU
+    const existingProduct = await db("products")
+      .where({ sku: productData.sku, active: false })
+      .first();
+
+    if (existingProduct) {
+      // Reactivar y actualizar el producto existente
+      await db("products")
+        .where({ id: existingProduct.id })
+        .update({ ...productData, active: true });
+
+      req.app.get("io").emit("catalog_updated");
+      return res.status(200).json({
+        id: existingProduct.id,
+        message:
+          "Producto reactivado y actualizado. Este producto ya existía y ha sido restaurado.",
+      });
+    }
+
+    // Si no existe inactivo, crear nuevo
     const [id] = await db("products").insert(productData).returning("id");
     req.app.get("io").emit("catalog_updated");
     res.status(201).json({ id, message: "Producto creado con éxito" });
   } catch (error) {
     console.error("Error al crear producto:", error);
     if (error.code === "23505") {
-      return res.status(400).json({ message: "El SKU ya existe" });
+      return res
+        .status(400)
+        .json({ message: "El SKU ya existe en un producto activo" });
     }
     res.status(500).json({ message: "Error al crear producto" });
   }
@@ -168,12 +191,13 @@ exports.updateProduct = async (req, res) => {
 exports.deleteProduct = async (req, res) => {
   const { id } = req.params;
   try {
-    await db("products").where({ id }).del();
+    // Desactivación lógica en lugar de eliminación física
+    await db("products").where({ id }).update({ active: false });
     req.app.get("io").emit("catalog_updated");
-    res.json({ message: "Producto eliminado" });
+    res.json({ message: "Producto desactivado correctamente" });
   } catch (error) {
     console.error("Error en deleteProduct:", error);
-    res.status(500).json({ message: "Error al eliminar producto" });
+    res.status(500).json({ message: "Error al desactivar producto" });
   }
 };
 
@@ -260,14 +284,17 @@ exports.getTopSellers = async (req, res) => {
 
     const products = await db("products")
       .whereIn("products.id", productIds)
+      .where("products.active", true)
       .leftJoin("categories", "products.category_id", "categories.id")
       .select("products.*", "categories.name as category_name");
 
     // Mantener el orden de ventas
-    const sortedProducts = topSellers.map((s) => {
-      const p = products.find((prod) => prod.id === s.product_id);
-      return { ...p, total_sold: s.total_sold };
-    });
+    const sortedProducts = topSellers
+      .map((s) => {
+        const p = products.find((prod) => prod.id === s.product_id);
+        return { ...p, total_sold: s.total_sold };
+      })
+      .filter((p) => p.id); // Filtrar productos que fueron desactivados
 
     res.json(sortedProducts);
   } catch (error) {

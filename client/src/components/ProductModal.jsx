@@ -261,12 +261,12 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     
     try {
       await axios.delete(`/api/products/${editProduct.id}`);
-      toast.success('Producto eliminado correctamente');
-      refreshProducts();
+      toast.success('Producto desactivado correctamente');
       setShowDeleteConfirm(false);
-      handleClose();
+      handleClose(); // Cerrar modal ANTES de refrescar
+      refreshProducts(); // Refrescar después de cerrar
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Error al eliminar el producto');
+      toast.error(err.response?.data?.message || 'Error al desactivar el producto');
     }
   };
 
@@ -521,7 +521,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                 variant="danger" 
                 onClick={() => setShowDeleteConfirm(true)}
               >
-                Eliminar Producto
+                Desactivar Producto
               </Button>
             )}
           </div>
@@ -532,21 +532,21 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         </Modal.Footer>
       </Form>
       
-      {/* Modal de confirmación de eliminación */}
+      {/* Modal de confirmación de desactivación */}
       <Modal show={showDeleteConfirm} onHide={() => setShowDeleteConfirm(false)} centered>
         <Modal.Header closeButton>
-          <Modal.Title>Confirmar Eliminación</Modal.Title>
+          <Modal.Title>Confirmar Desactivación</Modal.Title>
         </Modal.Header>
         <Modal.Body>
-          <p>¿Estás seguro de que deseas eliminar el producto <strong>{editProduct?.name}</strong>?</p>
-          <p className="text-danger mb-0"><small>Esta acción no se puede deshacer.</small></p>
+          <p>¿Estás seguro de que deseas desactivar el producto <strong>{editProduct?.name}</strong>?</p>
+          <p className="text-muted mb-0"><small>El producto se ocultará de los listados pero podrás reactivarlo creando un producto nuevo con el mismo código SKU.</small></p>
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowDeleteConfirm(false)}>
             Cancelar
           </Button>
           <Button variant="danger" onClick={handleDelete}>
-            Eliminar
+            Desactivar
           </Button>
         </Modal.Footer>
       </Modal>

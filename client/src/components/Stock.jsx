@@ -56,12 +56,17 @@ const Stock = () => {
       console.log('Catálogo actualizado via Socket.io');
       fetchProducts();
       fetchTopSellers();
-      if (editingProduct) {
+      if (editingProduct && editingProduct.sku) {
         axios.get(`/api/products/sku/${editingProduct.sku}`)
           .then(res => {
             if (res.data) setEditingProduct(res.data);
           })
-          .catch(err => console.error('Error refreshing editing product:', err));
+          .catch(err => {
+            // Si el producto fue desactivado (404), ignorar silenciosamente
+            if (err.response?.status !== 404) {
+              console.error('Error refreshing editing product:', err);
+            }
+          });
       }
     };
 
@@ -287,7 +292,10 @@ const Stock = () => {
 
       <ProductModal 
         show={showModal} 
-        handleClose={() => setShowModal(false)} 
+        handleClose={() => { 
+          setShowModal(false); 
+          setEditingProduct(null); // Limpiar editingProduct al cerrar
+        }} 
         refreshProducts={() => { fetchProducts(); fetchTopSellers(); }}
         refreshCategories={fetchCategories}
         categories={categories}
