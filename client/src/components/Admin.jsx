@@ -278,7 +278,7 @@ const Admin = () => {
                   <td className="text-muted small">{p.sku}</td>
                   <td className="text-center">
                     <Badge bg={p.stock <= 2 ? 'danger' : 'warning'} className="px-3">
-                      {p.stock} unidades
+                      {Math.floor(p.stock)} unidades
                     </Badge>
                   </td>
                   <td>

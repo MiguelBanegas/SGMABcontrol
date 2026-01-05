@@ -192,7 +192,7 @@ const Stock = () => {
                   </div>
                   <div className="flex-grow-1">
                     <div className="fw-bold small">{p.name}</div>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>SKU: {p.sku} | Stock: {p.stock}</div>
+                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>SKU: {p.sku} | Stock: {Math.floor(p.stock)}</div>
                   </div>
                   <div className="text-primary fw-bold">${p.price_sell}</div>
                 </ListGroup.Item>
@@ -276,7 +276,7 @@ const Stock = () => {
                 <div className="d-flex justify-content-between align-items-center mt-auto">
                   <div className="text-primary font-weight-bold h5 mb-0">${product.price_sell}</div>
                   <Badge bg={product.stock > 10 ? "success" : "warning"} pill>
-                    Stock: {product.stock}
+                    Stock: {Math.floor(product.stock)}
                   </Badge>
                 </div>
               </Card.Body>
