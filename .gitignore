@@ -39,3 +39,8 @@ yarn-error.log*
 server/uploads/*
 !server/uploads/.gitkeep
 client/dist/
+
+# Spooler/Print Logs
+server/spooler/print_log.txt
+server/spooler/completed/*.html
+server/spooler/temp/*.html
