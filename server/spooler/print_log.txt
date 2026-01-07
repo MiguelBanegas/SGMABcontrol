@@ -1,0 +1,148 @@
+[6/1/2026, 05:01:01] Servicio de Spooler v3 (Silent) iniciado.
+[6/1/2026, 05:07:42] Procesando 1 trabajos.
+[6/1/2026, 05:07:42] Enviando a spooler: ticket_1767730059907_27c9dc24.html
+[6/1/2026, 05:08:01] Error de ejecución en ticket_1767730059907_27c9dc24.html: Command failed: powershell -Command "         $ie = New-Object -ComObject InternetExplorer.Application;         $ie.Navigate('C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767730059907_27c9dc24.html');         $start = Get-Date;         while($ie.ReadyState -ne 4 -and (Get-Date) -lt $start.AddSeconds(10)){ Start-Sleep -m 100 };         if($ie.ReadyState -eq 4){             $ie.ExecWB(6, 2, $null, $null);             Start-Sleep -s 3;         }         $ie.Quit();       "
+Interfaz desconocida. 
+(Excepci�n de HRESULT: 
+0x800706B5)
+En l�nea: 1 Car�cter: 443
++ ... , $null);           
+  Start-Sleep -s 3;       
+  }         $ie.Quit();
++                         
+                          
+            ~~~~~~~~~~
+    + CategoryInfo        
+      : OperationStopped  
+  : (:) [], COMExceptio   
+ n
+    + FullyQualifiedError 
+   Id : System.Runtime.I  
+  nteropServices.COMExc   
+ eption
+ 
+
+[6/1/2026, 05:10:26] Servicio de Spooler v4 (STA .NET) iniciado.
+[6/1/2026, 05:12:45] Servicio de Spooler v4 (STA .NET) iniciado.
+[6/1/2026, 05:14:01] Procesando 1 trabajos.
+[6/1/2026, 05:14:01] Enviando a spooler (.NET): ticket_1767730436734_0a6b60f3.html
+[6/1/2026, 05:18:45] Error en trabajo ticket_1767730436734_0a6b60f3.html: Command failed: powershell -NoProfile -ExecutionPolicy Bypass -Sta -Command "         Add-Type -AssemblyName System.Windows.Forms;         $browser = New-Object System.Windows.Forms.WebBrowser;         $browser.ScrollBarsEnabled = $false;         $browser.Navigate('C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767730436734_0a6b60f3.html');         while ($browser.ReadyState -ne 'Complete') { Start-Sleep -m 100 };         $browser.Print();         Start-Sleep -s 2;       "
+
+[6/1/2026, 05:18:46] Procesando 1 trabajos.
+[6/1/2026, 05:18:46] Enviando a spooler (.NET): ticket_1767730495485_929cfc85.html
+[6/1/2026, 05:19:18] Servicio de Spooler v5 (MSHTML Native) iniciado.
+[6/1/2026, 05:19:23] Procesando 1 trabajos.
+[6/1/2026, 05:19:23] Enviando a spooler (Native): ticket_1767730495485_929cfc85.html
+[6/1/2026, 05:19:39] Error en ticket_1767730495485_929cfc85.html: Command failed: rundll32.exe mshtml.dll,PrintHTML "C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767730495485_929cfc85.html"
+
+[6/1/2026, 05:21:54] Servicio de Spooler v6 (Standard Print) iniciado.
+[6/1/2026, 05:28:02] Servicio de Spooler v6 (Standard Print) iniciado.
+[6/1/2026, 05:35:20] Detectados 1 trabajos para procesar.
+[6/1/2026, 05:35:20] Enviando a spooler (Standard): ticket_1767731715420_fa456270.html
+[6/1/2026, 05:35:21] [ERROR] en ticket_1767731715420_fa456270.html: Command failed: powershell -Command "Start-Process -FilePath 'C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767731715420_fa456270.html' -Verb Print -WindowStyle Hidden"
+Start-Process : Este comando no se 
+puede ejecutar debido al error: No 
+hay ninguna aplicaci�n asociada con 
+el archivo especificado para esta 
+operaci�n.
+En l�nea: 1 Car�cter: 1
++ Start-Process -FilePath 'C:\Users\p
+c\Documents\SGMABControl\server\sp 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : Invali 
+   dOperation: (:) [Start-Process],  
+   InvalidOperationException
+    + FullyQualifiedErrorId : Invali 
+   dOperationException,Microsoft.Po  
+  werShell.Commands.StartProcessCo   
+ mmand
+ 
+
+[6/1/2026, 05:35:26] Trabajo ticket_1767731715420_fa456270.html movido a histórico.
+[6/1/2026, 05:39:05] Detectados 1 trabajos para procesar.
+[6/1/2026, 05:39:05] Enviando a spooler (Standard): ticket_1767731943737_df98b840.html
+[6/1/2026, 05:39:08] [ERROR] en ticket_1767731943737_df98b840.html: Command failed: powershell -Command "Start-Process -FilePath 'C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767731943737_df98b840.html' -Verb Print -WindowStyle Hidden"
+Start-Process : Este comando no se 
+puede ejecutar debido al error: No 
+hay ninguna aplicaci�n asociada con 
+el archivo especificado para esta 
+operaci�n.
+En l�nea: 1 Car�cter: 1
++ Start-Process -FilePath 'C:\Users\p
+c\Documents\SGMABControl\server\sp 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : Invali 
+   dOperation: (:) [Start-Process],  
+   InvalidOperationException
+    + FullyQualifiedErrorId : Invali 
+   dOperationException,Microsoft.Po  
+  werShell.Commands.StartProcessCo   
+ mmand
+ 
+
+[6/1/2026, 05:39:13] Trabajo ticket_1767731943737_df98b840.html movido a histórico.
+[6/1/2026, 05:41:46] Detectados 1 trabajos para procesar.
+[6/1/2026, 05:41:46] Enviando a spooler (Standard): ticket_1767732102882_3d009707.html
+[6/1/2026, 05:41:48] [ERROR] en ticket_1767732102882_3d009707.html: Command failed: powershell -Command "Start-Process -FilePath 'C:\Users\pc\Documents\SGMABControl\server\spooler\processing\ticket_1767732102882_3d009707.html' -Verb Print -WindowStyle Hidden"
+Start-Process : Este comando no se 
+puede ejecutar debido al error: No 
+hay ninguna aplicaci�n asociada con 
+el archivo especificado para esta 
+operaci�n.
+En l�nea: 1 Car�cter: 1
++ Start-Process -FilePath 'C:\Users\p
+c\Documents\SGMABControl\server\sp 
+...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : Invali 
+   dOperation: (:) [Start-Process],  
+   InvalidOperationException
+    + FullyQualifiedErrorId : Invali 
+   dOperationException,Microsoft.Po  
+  werShell.Commands.StartProcessCo   
+ mmand
+ 
+
+[6/1/2026, 05:41:53] Trabajo ticket_1767732102882_3d009707.html movido a histórico.
+[6/1/2026, 07:30:11] Servicio de Spooler v7 (Edge PDF Bridge) iniciado.
+[6/1/2026, 07:44:17] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 07:44:29] Impresora detectada: Name                          ----                          Microsoft XPS Document Writer
+[6/1/2026, 08:41:19] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 08:41:22] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 08:46:07] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 08:46:07] Enviando a impresión automática: ticket_1767743167153_d037b47e.html
+[6/1/2026, 08:46:17] Proceso de impresión finalizado para ticket_1767743167153_d037b47e.html.
+[6/1/2026, 08:47:04] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 08:47:04] Enviando a impresión automática: ticket_1767743222817_6e4bf90b.html
+[6/1/2026, 08:47:14] Proceso de impresión finalizado para ticket_1767743222817_6e4bf90b.html.
+[6/1/2026, 08:48:38] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 08:48:38] Enviando a impresión automática: ticket_1767743315905_535c381e.html
+[6/1/2026, 08:48:48] Proceso de impresión finalizado para ticket_1767743315905_535c381e.html.
+[6/1/2026, 08:49:41] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 08:49:41] Enviando a impresión automática: ticket_1767743381113_aab832db.html
+[6/1/2026, 08:49:51] Proceso de impresión finalizado para ticket_1767743381113_aab832db.html.
+[6/1/2026, 08:50:38] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 08:50:38] Enviando a impresión automática: ticket_1767743437872_14b29fcd.html
+[6/1/2026, 08:50:48] Proceso de impresión finalizado para ticket_1767743437872_14b29fcd.html.
+[6/1/2026, 08:54:40] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 08:54:49] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 08:55:45] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 08:55:49] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 08:56:12] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 08:56:16] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 08:58:07] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 08:58:10] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 09:04:23] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[6/1/2026, 09:04:29] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[6/1/2026, 09:09:39] Archivos detectados: 1. Iniciando procesamiento.
+[6/1/2026, 09:09:39] Enviando a impresión automática: ticket_1767744577282_4f0026f3.html
+[6/1/2026, 09:09:49] Proceso de impresión finalizado para ticket_1767744577282_4f0026f3.html.
+[7/1/2026, 12:21:53] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[7/1/2026, 12:22:01] Impresora detectada: Name                   ----                   Microsoft Print to PDF
+[7/1/2026, 12:22:49] Servicio de Spooler v8 (Edge Kiosk Direct) iniciado.
+[7/1/2026, 12:22:58] Impresora detectada: Name                   ----                   Microsoft Print to PDF

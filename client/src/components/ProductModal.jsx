@@ -21,7 +21,10 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     category_id: '',
     sell_by_weight: false,
     price_offer: '',
-    is_offer: false
+    is_offer: false,
+    promo_buy: '',
+    promo_pay: '',
+    promo_type: 'none'
   });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -46,7 +49,10 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         category_id: editProduct.category_id || '',
         sell_by_weight: !!editProduct.sell_by_weight,
         price_offer: editProduct.price_offer || '',
-        is_offer: !!editProduct.is_offer
+        is_offer: !!editProduct.is_offer,
+        promo_buy: editProduct.promo_buy || '',
+        promo_pay: editProduct.promo_pay || '',
+        promo_type: editProduct.promo_type || 'none'
       });
       setPreview(editProduct.image_url ? `${editProduct.image_url}` : null);
     } else {
@@ -464,21 +470,97 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                 />
               </Form.Group>
 
-              <Form.Group className="mb-3">
-                <Form.Label>Precio de Oferta ($)</Form.Label>
-                <Form.Control 
-                  type="number" 
-                  name="price_offer" 
-                  value={formData.price_offer} 
-                  onChange={handleInputChange} 
-                  step="0.01"
-                  placeholder="Ej: 999.99"
-                  disabled={!formData.is_offer}
-                />
-                <Form.Text className="text-muted">
-                  Este es el precio que se cobrará mientras la oferta esté activa.
-                </Form.Text>
-              </Form.Group>
+              {formData.is_offer && (
+                <>
+                  <Form.Group className="mb-3">
+                    <Form.Label className="fw-bold">Tipo de Oferta</Form.Label>
+                    <Form.Select 
+                      value={formData.promo_type}
+                      onChange={(e) => setFormData({...formData, promo_type: e.target.value})}
+                    >
+                      <option value="none">Sin oferta</option>
+                      <option value="price">Solo Precio Oferta</option>
+                      <option value="quantity">Solo Promoción XxY</option>
+                      <option value="both">Ambas (Precio + XxY)</option>
+                    </Form.Select>
+                    <Form.Text className="text-muted">
+                      Selecciona qué tipo de oferta aplicar a este producto
+                    </Form.Text>
+                  </Form.Group>
+
+                  {(formData.promo_type === 'price' || formData.promo_type === 'both') && (
+                    <Form.Group className="mb-3">
+                      <Form.Label>Precio de Oferta ($)</Form.Label>
+                      <Form.Control 
+                        type="number" 
+                        name="price_offer" 
+                        value={formData.price_offer} 
+                        onChange={handleInputChange} 
+                        step="0.01"
+                        placeholder="Ej: 1000"
+                      />
+                      <Form.Text className="text-muted">
+                        Precio con descuento
+                      </Form.Text>
+                    </Form.Group>
+                  )}
+
+                  {(formData.promo_type === 'quantity' || formData.promo_type === 'both') && (
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-bold">Promoción XxY (Lleva X, Paga Y)</Form.Label>
+                      <div className="d-flex gap-2 align-items-center">
+                        <div style={{ width: '100px' }}>
+                          <Form.Label className="small mb-1">Lleva</Form.Label>
+                          <Form.Control
+                            type="number"
+                            name="promo_buy"
+                            value={formData.promo_buy}
+                            onChange={handleInputChange}
+                            placeholder="2"
+                          />
+                        </div>
+                        <span className="mt-4">×</span>
+                        <div style={{ width: '100px' }}>
+                          <Form.Label className="small mb-1">Paga</Form.Label>
+                          <Form.Control
+                            type="number"
+                            name="promo_pay"
+                            value={formData.promo_pay}
+                            onChange={handleInputChange}
+                            placeholder="1"
+                          />
+                        </div>
+                        {formData.promo_buy && formData.promo_pay && (
+                          <Badge bg="danger" className="ms-2 mt-4">
+                            🔥 {formData.promo_buy}×{formData.promo_pay}
+                          </Badge>
+                        )}
+                      </div>
+                      <Form.Text className="text-muted">
+                        Ejemplo: 2×1 (Lleva 2, Paga 1), 3×2 (Lleva 3, Paga 2)
+                      </Form.Text>
+                    </Form.Group>
+                  )}
+
+                  {formData.promo_type !== 'none' && formData.price_sell && (
+                    <Alert variant="info" className="small">
+                      <strong>💡 Vista Previa:</strong><br/>
+                      {formData.promo_type === 'price' && formData.price_offer && (
+                        <span>Precio: ${formData.price_sell} → ${formData.price_offer}</span>
+                      )}
+                      {formData.promo_type === 'quantity' && formData.promo_buy && formData.promo_pay && (
+                        <span>Promo: {formData.promo_buy}×{formData.promo_pay} sobre ${formData.price_sell}</span>
+                      )}
+                      {formData.promo_type === 'both' && formData.price_offer && formData.promo_buy && formData.promo_pay && (
+                        <>
+                          Precio: ${formData.price_sell} → ${formData.price_offer}<br/>
+                          Promo: {formData.promo_buy}×{formData.promo_pay} sobre precio oferta
+                        </>
+                      )}
+                    </Alert>
+                  )}
+                </>
+              )}
             </Col>
             <Col md={6}>
               <div className="text-center">

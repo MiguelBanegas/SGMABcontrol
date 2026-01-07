@@ -7,6 +7,8 @@ const saleRoutes = require("./routes/saleRoutes");
 const userRoutes = require("./routes/userRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
+const printRoutes = require("./routes/printRoutes");
+const { startSpooler } = require("./services/printService");
 const path = require("path");
 
 const app = express();
@@ -46,6 +48,8 @@ app.use("/api/sales", saleRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/settings", require("./routes/settingsRoutes"));
+app.use("/api/print", printRoutes);
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });
@@ -83,4 +87,5 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  startSpooler();
 });

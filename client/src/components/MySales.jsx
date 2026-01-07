@@ -4,6 +4,7 @@ import { Receipt, ChevronDown, ChevronUp, Printer } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
+import socket from '../socket';
 
 function MySales() {
   const [sales, setSales] = useState([]);
@@ -16,6 +17,11 @@ function MySales() {
 
   useEffect(() => {
     loadSales(currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    socket.on('sales_updated', () => loadSales(currentPage));
+    return () => socket.off('sales_updated');
   }, [currentPage]);
 
   const loadSales = async (page = 1) => {
@@ -53,79 +59,137 @@ function MySales() {
         <style>
           @page { size: 80mm auto; margin: 0; }
           body { 
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            line-height: 1.4;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.3;
             margin: 0;
-            padding: 5mm;
+            padding: 8mm 5mm;
             width: 80mm;
+            color: #000;
           }
           .center { text-align: center; }
           .right { text-align: right; }
-          .separator { border-top: 1px dashed #000; margin: 5px 0; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { padding: 2px 0; }
-          th { text-align: left; border-bottom: 1px solid #000; }
-          small { font-size: 10px; }
+          .bold { font-weight: bold; }
+          .uppercase { text-transform: uppercase; }
+          table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+          th { text-align: left; border-bottom: 1.5px solid black; padding-bottom: 4px; font-size: 10px; letter-spacing: 0.5px; }
+          td { vertical-align: top; padding: 6px 0; border-top: 0.5px dashed #ccc; }
+          tr:first-child td { border-top: none; }
+          .separator { border-bottom: 1.5px solid black; margin: 8px 0; }
+          .total-box { 
+            margin-top: 10px; 
+            padding: 8px 0; 
+            border-top: 2px solid black; 
+            border-bottom: 2px solid black;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .summary-item { display: flex; justify-content: space-between; margin-bottom: 4px; }
+          @media print {
+            body { margin: 0; padding: 8mm 5mm; }
+          }
         </style>
       </head>
       <body>
         <div class="center">
-          <h2 style="margin: 0; font-size: 18px;">SGMAB CONTROL</h2>
-          <p style="margin: 2px 0;">Comercio & Gestión</p>
-          <p style="margin: 2px 0;">--------------------------------</p>
+          <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: -0.5px;">SGMAB CONTROL</h1>
+          <p style="margin: 2px 0; font-size: 12px; opacity: 0.8;">Comercio & Gestión</p>
+          <div class="separator"></div>
         </div>
         
-        <div style="margin-bottom: 10px;">
+        <div style="margin-bottom: 12px; font-size: 10px;">
           <p style="margin: 2px 0;"><b>Fecha:</b> ${new Date(sale.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
           <p style="margin: 2px 0;"><b>Vendedor:</b> ${user?.username || 'Vendedor'}</p>
-          <p style="margin: 2px 0;"><b>Cliente:</b> ${sale.customer_name || 'Anónimo'}</p>
+          <p style="margin: 2px 0;"><b>Cliente:</b> ${sale.customer_name || 'Cons. Final'}</p>
         </div>
         
-        <p class="separator">--------------------------------</p>
+        <div class="separator"></div>
         
         <table>
           <thead>
-            <tr>
-              <th>Cant</th>
-              <th>Producto</th>
-              <th class="right">Total</th>
+            <tr class="uppercase">
+              <th style="width: 40px;">Cant</th>
+              <th>Descripción</th>
+              <th class="right">Importe</th>
             </tr>
           </thead>
           <tbody>
-            ${sale.items.map(item => `
+            ${sale.items.map(item => {
+              const totalItemLista = Number(item.subtotal) + Number(item.discount_amount);
+              const unitPrice = totalItemLista / Number(item.quantity);
+              const isWeight = item.sell_by_weight == 1 || item.sell_by_weight === true;
+
+              return `
               <tr>
-                <td>${item.quantity}</td>
+                <td>${isWeight ? item.quantity : Math.floor(item.quantity)}</td>
                 <td style="padding-right: 5px;">
-                  ${item.product_name}
-                  ${item.discount_amount > 0 ? '<span style="font-size: 9px; margin-left: 4px;">(PROMO)</span>' : ''}
-                  <br/>
-                  <small>@ $${item.price_unit}</small>
+                  <div class="bold">${item.product_name}</div>
+                  <div style="font-size: 9.5px; margin-top: 2px; color: #444;">
+                    <b>@ $${unitPrice.toFixed(2)}</b> ${isWeight ? '/Kg' : 'x unid.'}
+                  </div>
+                  ${item.promo_type && item.promo_type !== 'none' ? `<div style="font-size: 8.5px; color: #198754; font-weight: bold; margin-top: 1px;">
+                    ${item.promo_type === 'quantity' ? `Promo ${item.promo_buy}x${item.promo_pay} aplicada` : 
+                      item.promo_type === 'price' ? `Precio de Oferta` : 
+                      `Promo ${item.promo_buy}x${item.promo_pay} + Oferta`}
+                  </div>` : ''}
                 </td>
-                <td class="right">$${item.subtotal}</td>
+                <td class="right">
+                  ${item.discount_amount > 0 ? `<div style="font-size: 9px; color: #999; text-decoration: line-through;">$${totalItemLista.toFixed(2)}</div>` : ''}
+                  <div class="bold">$${Number(item.subtotal).toFixed(2)}</div>
+                  ${item.discount_amount > 0 ? `<div style="font-size: 8.5px; color: #198754; font-weight: 600;">(-$${Number(item.discount_amount).toFixed(2)})</div>` : ''}
+                </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
-        
-        ${sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0) > 0 ? `
-          <div class="right" style="font-size: 11px; color: #333;">
-            Su ahorro: $${sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0).toFixed(2)}
+
+        <div style="border-top: 1.5px solid black; padding-top: 8px;">
+          <div class="summary-item" style="opacity: 0.7;">
+            <span>Suma de productos:</span>
+            <span>$${(Number(sale.subtotal) + sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0)).toFixed(2)}</span>
           </div>
-        ` : ''}
-        
-        <p class="separator">--------------------------------</p>
-        
-        <div class="right" style="font-size: 16px;">
-          <b>TOTAL: $${sale.total}</b>
+
+          ${sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0) > 0 ? `
+            <div class="summary-item" style="color: #d00; font-weight: 500;">
+              <span>Ahorros aplicados:</span>
+              <span>-$${sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0).toFixed(2)}</span>
+            </div>
+          ` : ''}
+
+          <div class="summary-item" style="font-weight: 600; border-top: 0.5px solid #eee; padding-top: 4px;">
+            <span>SUBTOTAL:</span>
+            <span>$${Number(sale.subtotal).toFixed(2)}</span>
+          </div>
+
+          ${Number(sale.cash_discount) > 0 ? `
+            <div class="summary-item" style="color: #198754;">
+              <span>Desc. Efectivo:</span>
+              <span>-$${Number(sale.cash_discount).toFixed(2)}</span>
+            </div>
+          ` : ''}
+
+          <div class="total-box">
+            <span style="font-size: 13px; font-weight: 900;">TOTAL A PAGAR:</span>
+            <span style="font-size: 18px; font-weight: 900;">$${Number(sale.total).toFixed(2)}</span>
+          </div>
         </div>
-        <div class="right" style="font-size: 11px; margin-top: 5px;">
-          <i>Pago: ${sale.payment_method || 'Efectivo'}</i>
+        
+        <div class="center" style="margin-top: 12px; padding: 6px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+          <span style="font-size: 10px; font-weight: 700; uppercase">Bultos: ${sale.items.reduce((sum, item) => {
+            const isW = item.sell_by_weight === true || item.sell_by_weight == 1;
+            return sum + (isW ? 1 : parseFloat(item.quantity));
+          }, 0)}</span>
+        </div>
+
+        <div class="right" style="font-size: 10px; margin-top: 10px;">
+          <i>Medio de Pago: <b>${sale.payment_method || 'Efectivo'}</b></i>
         </div>
         
-        <div class="center" style="margin-top: 20px;">
-          <p style="margin: 2px 0; font-size: 10px;">¡Gracias por su compra!</p>
-          <p style="margin: 2px 0; font-size: 8px;">ID: ${sale.id.slice(0, 8)}</p>
+        <div class="center" style="margin-top: 25px;">
+          <p style="margin: 2px 0; font-size: 11px; font-weight: 600;">¡Gracias por confiar en nosotros!</p>
+          <p style="margin: 4px 0; font-size: 8px; opacity: 0.5;">COMPROBANTE NO VÁLIDO COMO FACTURA</p>
+          <p style="margin: 2px 0; font-size: 8px; opacity: 0.5;">ID: ${sale.id.toUpperCase()}</p>
         </div>
         
         <script>
@@ -238,16 +302,54 @@ function MySales() {
                               <tbody>
                                 {sale.items.map((item, idx) => (
                                   <tr key={idx}>
-                                    <td>{item.product_name}</td>
-                                    <td className="text-center">{item.quantity}</td>
-                                    <td className="text-end">${item.price_unit}</td>
-                                    <td className="text-end">${item.subtotal}</td>
+                                     <td>
+                                      {item.product_name}
+                                      {item.promo_type && item.promo_type !== 'none' && (
+                                        <div className="text-success fw-bold" style={{ fontSize: '0.75rem' }}>
+                                          {item.promo_type === 'quantity' && `Promo ${item.promo_buy}x${item.promo_pay}`}
+                                          {item.promo_type === 'price' && `Precio Oferta`}
+                                          {item.promo_type === 'both' && `Promo ${item.promo_buy}x${item.promo_pay} + Oferta`}
+                                        </div>
+                                      )}
+                                    </td>
+                                     <td className="text-center">{item.quantity} {(item.sell_by_weight == 1 || item.sell_by_weight === true) ? 'Kg' : ''}</td>
+                                    <td className="text-end">
+                                      {item.discount_amount > 0 && (
+                                        <div className="text-muted x-small text-decoration-line-through" style={{ fontSize: '0.7rem' }}>
+                                          ${((Number(item.subtotal) + Number(item.discount_amount))).toFixed(2)}
+                                        </div>
+                                      )}
+                                      <div className="fw-bold">
+                                        ${Number(item.subtotal).toFixed(2)}
+                                      </div>
+                                      {(item.sell_by_weight == 1 || item.sell_by_weight === true) && (
+                                        <div className="text-muted" style={{ fontSize: '0.65rem' }}>@ ${(Number(item.subtotal) / Number(item.quantity)).toFixed(2)}/kg</div>
+                                      )}
+                                    </td>
+                                    <td className="text-end">
+                                      ${item.subtotal}
+                                      {item.discount_amount > 0 && (
+                                        <div className="x-small text-success" style={{ fontSize: '0.7rem' }}>Ahorro: -${Number(item.discount_amount).toFixed(2)}</div>
+                                      )}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </Table>
-                            <div className="mt-2 text-end">
-                              <strong>Método de pago:</strong> {sale.payment_method || 'Efectivo'}
+                            <div className="mt-2 text-end d-flex flex-column align-items-end">
+                              <div className="opacity-75 small">Total Lista: ${Number(sale.subtotal + sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0)).toFixed(2)}</div>
+                              {sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0) > 0 && (
+                                <div className="text-danger small fw-bold">Ahorro en Promos: -${sale.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0).toFixed(2)}</div>
+                              )}
+                              <div className="opacity-75 small border-top pt-1 mt-1">Subtotal: ${Number(sale.subtotal).toFixed(2)}</div>
+                              {Number(sale.cash_discount) > 0 && (
+                                <div className="text-success small">Desc. Efectivo: -${Number(sale.cash_discount).toFixed(2)}</div>
+                              )}
+                              <div className="fw-bold h5">TOTAL: ${Number(sale.total).toFixed(2)}</div>
+                              <div className="bg-primary bg-opacity-10 rounded px-3 py-1 mt-2 text-primary fw-bold">
+                                Cantidad de Productos: {sale.items.reduce((sum, item) => sum + (item.sell_by_weight ? 1 : parseFloat(item.quantity)), 0)}
+                              </div>
+                              <div className="small mt-1 text-muted">Método: {sale.payment_method || 'Efectivo'}</div>
                             </div>
                           </div>
                         </Collapse>

@@ -80,6 +80,9 @@ exports.createProduct = async (req, res) => {
     price_offer: pOffer,
     is_offer: is_offer === "true" || is_offer === true,
     image_url,
+    promo_buy: req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
+    promo_pay: req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
+    promo_type: req.body.promo_type || "none",
   };
 
   try {
@@ -104,7 +107,15 @@ exports.createProduct = async (req, res) => {
 
     // Si no existe inactivo, crear nuevo
     const [id] = await db("products").insert(productData).returning("id");
-    req.app.get("io").emit("catalog_updated");
+
+    // Enviar delta rico
+    const newProduct = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .where("products.id", id)
+      .select("products.*", "categories.name as category_name")
+      .first();
+
+    req.app.get("io").emit("catalog_updated", [newProduct]);
     res.status(201).json({ id, message: "Producto creado con éxito" });
   } catch (error) {
     console.error("Error al crear producto:", error);
@@ -169,6 +180,9 @@ exports.updateProduct = async (req, res) => {
         : parseInt(category_id),
     price_offer: pOffer,
     is_offer: is_offer === "true" || is_offer === true,
+    promo_buy: req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
+    promo_pay: req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
+    promo_type: req.body.promo_type || "none",
   };
 
   if (req.file) {
@@ -177,7 +191,15 @@ exports.updateProduct = async (req, res) => {
 
   try {
     await db("products").where({ id }).update(updateData);
-    req.app.get("io").emit("catalog_updated");
+
+    // Obtener producto actualizado con categoría para el delta
+    const updatedProduct = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .where("products.id", id)
+      .select("products.*", "categories.name as category_name")
+      .first();
+
+    req.app.get("io").emit("catalog_updated", [updatedProduct]);
     res.json({ message: "Producto actualizado con éxito" });
   } catch (error) {
     console.error("Error al actualizar producto:", error);
@@ -193,7 +215,12 @@ exports.deleteProduct = async (req, res) => {
   try {
     // Desactivación lógica en lugar de eliminación física
     await db("products").where({ id }).update({ active: false });
-    req.app.get("io").emit("catalog_updated");
+
+    // Notificar que este producto ya no es válido (enviamos el objeto con active false)
+    req.app
+      .get("io")
+      .emit("catalog_updated", [{ id: parseInt(id), active: 0 }]);
+
     res.json({ message: "Producto desactivado correctamente" });
   } catch (error) {
     console.error("Error en deleteProduct:", error);
@@ -319,7 +346,14 @@ exports.adjustStock = async (req, res) => {
       await trx("products").where({ id }).update({ stock: newStock });
     });
 
-    req.app.get("io").emit("catalog_updated");
+    // Obtener producto actualizado para el delta
+    const updatedProduct = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .where("products.id", id)
+      .select("products.*", "categories.name as category_name")
+      .first();
+
+    req.app.get("io").emit("catalog_updated", [updatedProduct]);
     res.json({ message: "Stock ajustado con éxito" });
   } catch (error) {
     console.error("Error en adjustStock:", error);

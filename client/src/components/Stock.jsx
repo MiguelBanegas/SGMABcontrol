@@ -272,6 +272,22 @@ const Stock = () => {
                     <small>Sin Imagen</small>
                   </div>
                 )}
+                {product.promo_type && product.promo_type !== 'none' && (
+                  <div className="position-absolute top-0 start-0 m-2">
+                    {product.promo_type === 'price' && (
+                      <Badge bg="success">💰 Oferta</Badge>
+                    )}
+                    {product.promo_type === 'quantity' && product.promo_buy && product.promo_pay && (
+                      <Badge bg="danger">🔥 {product.promo_buy}×{product.promo_pay}</Badge>
+                    )}
+                    {product.promo_type === 'both' && (
+                      <div className="d-flex flex-column gap-1">
+                        <Badge bg="success" className="small">💰 ${product.price_offer}</Badge>
+                        <Badge bg="danger" className="small">🔥 {product.promo_buy}×{product.promo_pay}</Badge>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <Badge bg="dark" className="position-absolute top-0 end-0 m-2 opacity-75">
                   SKU: {product.sku}
                 </Badge>

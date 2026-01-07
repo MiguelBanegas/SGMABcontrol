@@ -52,8 +52,14 @@ const SalesHistory = () => {
   useEffect(() => {
     fetchHistory();
     fetchCustomers();
-    socket.on('sales_updated', fetchHistory);
-    return () => socket.off('sales_updated');
+    
+    const handleSalesUpdate = () => {
+      console.log('Ventas actualizadas, refrescando historial...');
+      fetchHistory();
+    };
+
+    socket.on('sales_updated', handleSalesUpdate);
+    return () => socket.off('sales_updated', handleSalesUpdate);
   }, []);
 
   const fetchCustomers = async () => {
@@ -355,40 +361,86 @@ const SalesHistory = () => {
                   <tr>
                     <th>Producto</th>
                     <th className="text-center">Cant.</th>
-                    <th className="text-end">P. Lista</th>
-                    <th className="text-end">Desc.</th>
+                    <th className="text-end">Precio</th>
                     <th className="text-end">Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedSale.items.map((item, idx) => (
-                    <tr key={idx}>
-                      <td>
-                        {item.product_name}
-                        {item.discount_amount > 0 && (
-                          <Badge bg="success" className="ms-2 extra-small">OFERTA</Badge>
-                        )}
-                      </td>
-                      <td className="text-center">{item.quantity}</td>
-                      <td className="text-end text-muted small">${(Number(item.price_unit) + Number(item.discount_amount)).toFixed(2)}</td>
-                      <td className="text-end text-success">${Number(item.discount_amount).toFixed(2)}</td>
-                      <td className="text-end fw-bold">${item.subtotal}</td>
-                    </tr>
-                  ))}
+                  {selectedSale.items.map((item, idx) => {
+                    const totalItemLista = Number(item.subtotal) + Number(item.discount_amount);
+                    const unitListPrice = totalItemLista / Number(item.quantity);
+                    return (
+                      <tr key={idx}>
+                        <td>
+                          {item.product_name}
+                          {item.promo_type && item.promo_type !== 'none' && (
+                            <div className="x-small text-success fw-bold">
+                              {item.promo_type === 'quantity' && `Promo ${item.promo_buy}x${item.promo_pay}`}
+                              {item.promo_type === 'price' && `Precio Oferta`}
+                              {item.promo_type === 'both' && `Promo ${item.promo_buy}x${item.promo_pay} + Oferta`}
+                            </div>
+                          )}
+                          {!item.promo_type && item.discount_amount > 0 && (
+                            <Badge bg="success" className="ms-2 extra-small">OFERTA</Badge>
+                          )}
+                        </td>
+                         <td className="text-center">
+                          {item.quantity} {(item.sell_by_weight == 1 || item.sell_by_weight === true) ? 'Kg' : ''}
+                        </td>
+                        <td className="text-end">
+                          {item.discount_amount > 0 && (
+                            <div className="text-muted x-small text-decoration-line-through">
+                              ${(unitListPrice * ((item.sell_by_weight == 1 || item.sell_by_weight === true) ? item.quantity : 1)).toFixed(2)}
+                            </div>
+                          )}
+                          <div className="fw-bold">
+                            ${(Number(item.subtotal)).toFixed(2)}
+                          </div>
+                          {(item.sell_by_weight == 1 || item.sell_by_weight === true) && (
+                            <div className="text-muted" style={{ fontSize: '0.65rem' }}>(@ ${(Number(item.subtotal)/Number(item.quantity)).toFixed(2)}/kg)</div>
+                          )}
+                        </td>
+                        <td className="text-end fw-bold">${Number(item.subtotal).toFixed(2)}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot>
-                  {selectedSale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0) > 0 && (
-                    <tr className="table-success opacity-75">
-                      <th colSpan="4" className="text-end small">AHORRO TOTAL</th>
-                      <th className="text-end small">-${selectedSale.items.reduce((acc, current) => acc + (Number(current.discount_amount) * Number(current.quantity)), 0).toFixed(2)}</th>
+                  <tr className="table-light">
+                    <th colSpan="3" className="text-end small">Total Lista:</th>
+                    <th className="text-end small">${selectedSale.items.reduce((acc, item) => acc + (Number(item.subtotal) + Number(item.discount_amount)), 0).toFixed(2)}</th>
+                  </tr>
+                  {selectedSale.items.reduce((acc, item) => acc + Number(item.discount_amount), 0) > 0 && (
+                    <tr className="text-danger">
+                      <th colSpan="3" className="text-end small">Ahorro en Promos:</th>
+                      <th className="text-end small">-${selectedSale.items.reduce((acc, item) => acc + Number(item.discount_amount), 0).toFixed(2)}</th>
                     </tr>
                   )}
-                  <tr>
-                    <th colSpan="4" className="text-end">TOTAL</th>
-                    <th className="text-end text-primary h5">${Number(selectedSale.total || 0).toFixed(2)}</th>
+                  <tr className="border-top fw-bold">
+                    <th colSpan="3" className="text-end small">Subtotal:</th>
+                    <th className="text-end small">${Number(selectedSale.subtotal).toFixed(2)}</th>
+                  </tr>
+                  {Number(selectedSale.cash_discount) > 0 && (
+                    <tr className="text-success">
+                      <th colSpan="3" className="text-end small">Desc. Efectivo:</th>
+                      <th className="text-end small">-${Number(selectedSale.cash_discount).toFixed(2)}</th>
+                    </tr>
+                  )}
+                  <tr className="table-primary border-top">
+                    <th colSpan="3" className="text-end h5 mb-0">TOTAL</th>
+                    <th className="text-end text-primary h5 mb-0">${Number(selectedSale.total || 0).toFixed(2)}</th>
                   </tr>
                 </tfoot>
               </Table>
+              <div className="text-center bg-info bg-opacity-10 py-2 rounded mt-2 border border-info border-opacity-25">
+                 <span className="text-info small fw-bold">CANTIDAD DE PRODUCTOS: </span>
+                 <span className="h5 mb-0 text-info fw-bold">
+                   {selectedSale.items.reduce((sum, item) => {
+                     const isWeight = item.sell_by_weight === true || item.sell_by_weight == 1;
+                     return sum + (isWeight ? 1 : parseFloat(item.quantity));
+                   }, 0)}
+                 </span>
+              </div>
             </>
           )}
         </Modal.Body>

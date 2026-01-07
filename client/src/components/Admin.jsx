@@ -106,7 +106,17 @@ const Admin = () => {
         <BarChart3 className="me-2 text-primary" /> Panel de Administración
       </h2>
 
-      <Tabs defaultActiveKey="stats" className="mb-4">
+      {loading ? (
+        <div className="d-flex flex-column justify-content-center align-items-center" style={{ minHeight: '400px' }}>
+          <div className="spinner-border text-primary mb-3" role="status" style={{ width: '3rem', height: '3rem' }}>
+            <span className="visually-hidden">Cargando...</span>
+          </div>
+          <h5 className="text-muted">Cargando datos...</h5>
+          <p className="text-muted small">Por favor espere mientras se cargan los productos y estadísticas</p>
+        </div>
+      ) : (
+        <>
+        <Tabs defaultActiveKey="stats" className="mb-4">
         <Tab eventKey="stats" title="Estadísticas">
           <Row className="mb-4 mt-3">
             <Col md={3}>
@@ -313,6 +323,8 @@ const Admin = () => {
           </div>
         </Modal.Body>
       </Modal>
+      </>
+      )}
     </div>
   );
 };

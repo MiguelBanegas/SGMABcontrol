@@ -8,6 +8,17 @@ db.version(2).stores({
   offlineSales: "++id, status", // status: 'pending' | 'synced'
 });
 
+export const updateLocalProducts = async (products) => {
+  try {
+    const productsArray = Array.isArray(products) ? products : [products];
+    await db.transaction("rw", db.products, async () => {
+      await db.products.bulkPut(productsArray);
+    });
+  } catch (err) {
+    console.error("Error al actualizar productos locales:", err);
+  }
+};
+
 export const syncCatalog = async (products) => {
   try {
     await db.transaction("rw", db.products, async () => {

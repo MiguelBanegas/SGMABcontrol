@@ -1,13 +1,14 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { ShoppingCart, Package, Users, LogOut, Receipt } from 'lucide-react';
+import { ShoppingCart, Package, Users, LogOut, Receipt, Settings as SettingsIcon } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Stock from './components/Stock';
 import Sales from './components/Sales';
 import MySales from './components/MySales';
 import Admin from './components/Admin';
+import Settings from './components/Settings';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
 
@@ -80,9 +81,14 @@ function AppContent() {
                 <Package className="me-1" size={18} /> Stock
               </Nav.Link>
               {user.role === 'admin' && (
-                <Nav.Link as={Link} to="/admin" className="px-3">
-                  <Users className="me-1" size={18} /> Admin
-                </Nav.Link>
+                <>
+                  <Nav.Link as={Link} to="/admin" className="px-3">
+                    <Users className="me-1" size={18} /> Admin
+                  </Nav.Link>
+                  <Nav.Link as={Link} to="/settings" className="px-3">
+                    <SettingsIcon className="me-1" size={18} /> Configuración
+                  </Nav.Link>
+                </>
               )}
               <div className="ms-lg-3 border-start border-secondary ps-3 d-flex align-items-center">
                 <span className="text-light me-3 small d-none d-md-inline">{user.username} ({user.role})</span>
@@ -106,6 +112,9 @@ function AppContent() {
           <Route path="/stock" element={<Stock />} />
           <Route path="/admin" element={
             user.role === 'admin' ? <Admin /> : <Navigate to="/" replace />
+          } />
+          <Route path="/settings" element={
+            user.role === 'admin' ? <Settings /> : <Navigate to="/" replace />
           } />
         </Routes>
       </Container>

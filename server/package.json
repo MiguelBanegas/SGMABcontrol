@@ -32,7 +32,8 @@
   },
   "nodemonConfig": {
     "ignore": [
-      "uploads/*"
+      "uploads/*",
+      "spooler/*"
     ]
   }
 }

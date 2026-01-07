@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal } from 'react-bootstrap';
-import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff } from 'lucide-react';
-import { db, syncCatalog, syncCustomers } from '../db/localDb';
+import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer } from 'lucide-react';
+import { db, syncCatalog, syncCustomers, updateLocalProducts } from '../db/localDb';
 import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -41,6 +41,80 @@ const Sales = () => {
   const [syncStatus, setSyncStatus] = useState('synced'); // 'syncing', 'synced', 'error'
   const saveTimeoutRef = useRef(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [cashDiscountPercent, setCashDiscountPercent] = useState(0);
+  const [autoPrint, setAutoPrint] = useState(() => {
+    const saved = localStorage.getItem('auto_print');
+    return saved === null ? true : saved === 'true';
+  });
+  
+  // Función para calcular precio efectivo según tipo de promoción
+  const calculateItemPrice = (item) => {
+    const quantity = parseFloat(item.quantity);
+    const priceList = parseFloat(item.price_sell);
+    const priceOffer = parseFloat(item.price_offer) || priceList;
+    
+    let subtotal = 0;
+    let effectivePrice = priceList;
+    let savings = 0;
+    let details = '';
+
+    switch (item.promo_type) {
+      case 'price':
+        // Solo precio oferta
+        subtotal = quantity * priceOffer;
+        effectivePrice = priceOffer;
+        savings = (priceList - priceOffer) * quantity;
+        details = `Precio oferta: $${priceOffer}`;
+        break;
+
+      case 'quantity':
+        // Solo promoción XxY sobre precio lista
+        if (item.promo_buy && item.promo_pay) {
+          const sets = Math.floor(quantity / item.promo_buy);
+          const remaining = quantity % item.promo_buy;
+          const paidItems = (sets * item.promo_pay) + remaining;
+          subtotal = paidItems * priceList;
+          effectivePrice = subtotal / quantity;
+          savings = (quantity - paidItems) * priceList;
+          details = `${item.promo_buy}×${item.promo_pay}: Pagas ${paidItems} de ${quantity}`;
+        } else {
+          subtotal = quantity * priceList;
+        }
+        break;
+
+      case 'both':
+        // Ambas: XxY sobre precio oferta
+        if (item.promo_buy && item.promo_pay && priceOffer) {
+          const sets = Math.floor(quantity / item.promo_buy);
+          const remaining = quantity % item.promo_buy;
+          const paidItems = (sets * item.promo_pay) + remaining;
+          subtotal = paidItems * priceOffer;
+          effectivePrice = subtotal / quantity;
+          savings = (quantity * priceList) - subtotal;
+          details = `${item.promo_buy}×${item.promo_pay} sobre $${priceOffer}`;
+        } else if (priceOffer) {
+          subtotal = quantity * priceOffer;
+          effectivePrice = priceOffer;
+          savings = (priceList - priceOffer) * quantity;
+          details = `Precio oferta: $${priceOffer}`;
+        } else {
+          subtotal = quantity * priceList;
+        }
+        break;
+
+      default:
+        // Sin promoción
+        subtotal = quantity * priceList;
+    }
+
+    return {
+      subtotal: subtotal.toFixed(2),
+      basePrice: (item.promo_type === 'price' || item.promo_type === 'both' ? priceOffer : priceList).toFixed(2),
+      savings: savings.toFixed(2),
+      details
+    };
+  };
+
   // Función para imprimir ticket directamente
   const printTicket = (saleData) => {
     const printWindow = window.open('', '_blank', 'width=300,height=600');
@@ -55,86 +129,138 @@ const Sales = () => {
       <head>
         <meta charset="UTF-8">
         <title>Ticket de Venta</title>
+      <head>
+        <meta charset="UTF-8">
+        <title>Ticket de Venta</title>
         <style>
           @page { size: 80mm auto; margin: 0; }
           body { 
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-            line-height: 1.4;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 11px;
+            line-height: 1.3;
             margin: 0;
-            padding: 5mm;
+            padding: 8mm 5mm;
             width: 80mm;
+            color: #000;
           }
           .center { text-align: center; }
           .right { text-align: right; }
           .bold { font-weight: bold; }
+          .uppercase { text-transform: uppercase; }
           table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-          th { text-align: left; border-bottom: 1px solid black; padding-bottom: 3px; }
-          td { vertical-align: top; padding: 2px 0; }
-          .separator { margin: 5px 0; }
+          th { text-align: left; border-bottom: 1.5px solid black; padding-bottom: 4px; font-size: 10px; letter-spacing: 0.5px; }
+          td { vertical-align: top; padding: 6px 0; border-top: 0.5px dashed #ccc; }
+          tr:first-child td { border-top: none; }
+          .separator { border-bottom: 1.5px solid black; margin: 8px 0; }
+          .total-box { 
+            margin-top: 10px; 
+            padding: 8px 0; 
+            border-top: 2px solid black; 
+            border-bottom: 2px solid black;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .summary-item { display: flex; justify-content: space-between; margin-bottom: 4px; }
           @media print {
-            body { margin: 0; padding: 5mm; }
+            body { margin: 0; padding: 8mm 5mm; }
           }
         </style>
       </head>
       <body>
         <div class="center">
-          <h2 style="margin: 0; font-size: 18px;">SGMAB CONTROL</h2>
-          <p style="margin: 2px 0;">Comercio & Gestión</p>
-          <p style="margin: 2px 0;">--------------------------------</p>
+          <h1 style="margin: 0; font-size: 20px; font-weight: 900; letter-spacing: -0.5px;">SGMAB CONTROL</h1>
+          <p style="margin: 2px 0; font-size: 12px; opacity: 0.8;">Comercio & Gestión</p>
+          <div class="separator"></div>
         </div>
         
-        <div style="margin-bottom: 10px;">
+        <div style="margin-bottom: 12px; font-size: 10px;">
           <p style="margin: 2px 0;"><b>Fecha:</b> ${new Date(saleData.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
           <p style="margin: 2px 0;"><b>Vendedor:</b> ${saleData.seller_name}</p>
-          <p style="margin: 2px 0;"><b>Cliente:</b> ${saleData.customer_name}</p>
+          <p style="margin: 2px 0;"><b>Cliente:</b> ${saleData.customer_name || 'Cons. Final'}</p>
         </div>
         
-        <p class="separator">--------------------------------</p>
+        <div class="separator"></div>
         
         <table>
           <thead>
-            <tr>
-              <th>Cant</th>
-              <th>Producto</th>
-              <th class="right">Total</th>
+            <tr class="uppercase">
+              <th style="width: 40px;">Cant</th>
+              <th>Descripción</th>
+              <th class="right">Importe</th>
             </tr>
           </thead>
           <tbody>
-            ${saleData.items.map(item => `
+            ${saleData.items.map(item => {
+              const totalItemLista = (item.price_sell_at_sale || item.price_sell || 0) * item.quantity;
+              const unitPrice = totalItemLista / item.quantity;
+              const isWeight = item.sell_by_weight;
+
+              return `
               <tr>
-                <td>${item.quantity}</td>
+                <td>${isWeight ? item.quantity : Math.floor(item.quantity)}</td>
                 <td style="padding-right: 5px;">
-                  ${item.product_name}
-                  ${item.discount_amount > 0 ? '<span style="font-size: 9px; margin-left: 4px;">(PROMO)</span>' : ''}
-                  <br/>
-                  <small>@ $${item.price_unit}</small>
+                  <div class="bold">${item.product_name}</div>
+                  <div style="font-size: 9.5px; margin-top: 2px; color: #444;">
+                    <b>@ $${unitPrice.toFixed(2)}</b> ${isWeight ? '/Kg' : 'x unid.'}
+                  </div>
+                  ${item.promo_details ? `<div style="font-size: 8.5px; color: #198754; font-weight: bold; margin-top: 1px;">${item.promo_details}</div>` : ''}
                 </td>
-                <td class="right">$${item.subtotal}</td>
+                <td class="right">
+                  ${item.discount_amount > 0 ? `<div style="font-size: 9px; color: #999; text-decoration: line-through;">$${totalItemLista.toFixed(2)}</div>` : ''}
+                  <div class="bold">$${item.subtotal}</div>
+                  ${item.discount_amount > 0 ? `<div style="font-size: 8.5px; color: #198754; font-weight: 600;">(-$${item.discount_amount.toFixed(2)})</div>` : ''}
+                </td>
               </tr>
-            `).join('')}
+            `}).join('')}
           </tbody>
         </table>
         
-        ${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0) > 0 ? `
-          <div class="right" style="font-size: 11px; color: #333;">
-            Su ahorro: $${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) * Number(item.quantity)), 0).toFixed(2)}
+        <div style="border-top: 1.5px solid black; padding-top: 8px;">
+          <div class="summary-item" style="opacity: 0.7;">
+            <span>Suma de productos:</span>
+            <span>$${saleData.items.reduce((acc, item) => acc + ((item.price_sell_at_sale || item.price_sell || 0) * item.quantity), 0).toFixed(2)}</span>
           </div>
-        ` : ''}
-        
-        <p class="separator">--------------------------------</p>
-        
-        <div class="right" style="font-size: 16px;">
-          <b>TOTAL: $${saleData.total}</b>
+
+          ${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0) > 0 ? `
+            <div class="summary-item" style="color: #d00; font-weight: 500;">
+              <span>Ahorros aplicados:</span>
+              <span>-$${saleData.items.reduce((acc, item) => acc + (Number(item.discount_amount) || 0), 0).toFixed(2)}</span>
+            </div>
+          ` : ''}
+
+          <div class="summary-item" style="font-weight: 600; border-top: 0.5px solid #eee; padding-top: 4px;">
+            <span>SUBTOTAL:</span>
+            <span>$${saleData.subtotal.toFixed(2)}</span>
+          </div>
+
+          ${saleData.cash_discount > 0 ? `
+            <div class="summary-item" style="color: #198754;">
+              <span>Desc. Efectivo:</span>
+              <span>-$${saleData.cash_discount.toFixed(2)}</span>
+            </div>
+          ` : ''}
+
+          <div class="total-box">
+            <span style="font-size: 13px; font-weight: 900;">TOTAL A PAGAR:</span>
+            <span style="font-size: 18px; font-weight: 900;">$${saleData.total.toFixed(2)}</span>
+          </div>
         </div>
-        <div class="right" style="font-size: 11px; margin-top: 5px;">
-          <i>Pago: ${saleData.payment_method || 'Efectivo'}</i>
+        
+        <div class="center" style="margin-top: 12px; padding: 6px; background: #f8f9fa; border: 1px solid #eee; border-radius: 4px;">
+          <span style="font-size: 10px; font-weight: 700; uppercase">Bultos: ${saleData.items.reduce((sum, item) => sum + (item.sell_by_weight ? 1 : parseFloat(item.quantity)), 0)}</span>
+        </div>
+
+        <div class="right" style="font-size: 10px; margin-top: 10px;">
+          <i>Medio de Pago: <b>${saleData.payment_method || 'Efectivo'}</b></i>
         </div>
         
-        <div class="center" style="margin-top: 20px;">
-          <p style="margin: 2px 0; font-size: 10px;">¡Gracias por su compra!</p>
-          <p style="margin: 2px 0; font-size: 8px;">ID: ${saleData.id.slice(0, 8)}</p>
+        <div class="center" style="margin-top: 25px;">
+          <p style="margin: 2px 0; font-size: 11px; font-weight: 600;">¡Gracias por confiar en nosotros!</p>
+          <p style="margin: 4px 0; font-size: 8px; opacity: 0.5;">COMPROBANTE NO VÁLIDO COMO FACTURA</p>
+          <p style="margin: 2px 0; font-size: 8px; opacity: 0.5;">ID: ${saleData.id.toUpperCase()}</p>
         </div>
+
         
         <script>
           window.onload = function() {
@@ -175,12 +301,28 @@ const Sales = () => {
     window.addEventListener('online', handleStatus);
     window.addEventListener('offline', handleStatus);
     
+    // 1. Cargar datos locales inmediatamente para apertura instantánea
+    db.customers.toArray().then(localCusts => {
+      if (localCusts.length > 0) {
+        setCustomers(localCusts);
+        // Seleccionar Consumidor Final si es necesario
+        if (!selectedCustomerRef.current) {
+          const defaultCustomer = localCusts.find(c => c.name.toLowerCase().includes('cons. final'));
+          if (defaultCustomer) setSelectedCustomer(defaultCustomer);
+        }
+      }
+    });
+
+    // 2. Sincronización en segundo plano con el servidor
     if (navigator.onLine) {
       syncOfflineSales();
+      
+      // Catálogo
       axios.get('/api/products')
         .then(res => syncCatalog(res.data))
         .catch(err => console.error('Error al sincronizar catálogo', err));
       
+      // Clientes
       const token = localStorage.getItem('token');
       axios.get('/api/customers', {
         headers: { Authorization: `Bearer ${token}` }
@@ -189,23 +331,24 @@ const Sales = () => {
           setCustomers(res.data);
           syncCustomers(res.data);
           
-          // Setear Consumidor Final por defecto si no hay uno seleccionado
           if (!selectedCustomerRef.current) {
             const defaultCustomer = res.data.find(c => c.name.toLowerCase().includes('cons. final'));
-            if (defaultCustomer) {
-              setSelectedCustomer(defaultCustomer);
-            }
+            if (defaultCustomer) setSelectedCustomer(defaultCustomer);
           }
         })
         .catch(err => console.error('Error al sincronizar clientes', err));
     }
 
     // Escuchar actualizaciones en tiempo real
-    socket.on('catalog_updated', () => {
-      console.log('Recibida notificación de catálogo actualizado');
-      axios.get('/api/products')
-        .then(res => syncCatalog(res.data))
-        .catch(err => console.error('Error al re-sincronizar catálogo', err));
+    socket.on('catalog_updated', (data) => {
+      console.log('Recibida notificación de catálogo actualizado', data ? '(incremental)' : '(total)');
+      if (data && Array.isArray(data)) {
+        updateLocalProducts(data);
+      } else {
+        axios.get('/api/products')
+          .then(res => syncCatalog(res.data))
+          .catch(err => console.error('Error al re-sincronizar catálogo', err));
+      }
     });
 
     const handleGlobalKeyDown = (e) => {
@@ -223,6 +366,15 @@ const Sales = () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
       socket.off('catalog_updated');
     };
+  }, []);
+
+  // Cargar configuración de descuento por efectivo
+  useEffect(() => {
+    axios.get('/api/settings')
+      .then(res => {
+        setCashDiscountPercent(parseFloat(res.data.cash_discount_percent || 0));
+      })
+      .catch(err => console.error('Error al cargar configuración:', err));
   }, []);
 
   // Cargar venta en progreso al montar el componente
@@ -344,14 +496,13 @@ const Sales = () => {
       return;
     }
 
-    const finalPrice = product.is_offer && product.price_offer ? product.price_offer : product.price_sell;
     const existing = cart.find(item => item.id === product.id);
     if (existing) {
       setCart(cart.map(item => 
         item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
       ));
     } else {
-      setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: 1 }]);
+      setCart([...cart, { ...product, quantity: 1 }]);
     }
     
     // Activar efecto de highlight
@@ -379,7 +530,6 @@ const Sales = () => {
     }
 
     const product = currentWeightProduct;
-    const finalPrice = product.is_offer && product.price_offer ? product.price_offer : product.price_sell;
     const existing = cart.find(item => item.id === product.id);
     
     if (existing) {
@@ -387,7 +537,7 @@ const Sales = () => {
         item.id === product.id ? { ...item, quantity: item.quantity + weight } : item
       ));
     } else {
-      setCart([...cart, { ...product, price_sell: finalPrice, original_price_sell: product.price_sell, quantity: weight }]);
+      setCart([...cart, { ...product, quantity: weight }]);
     }
 
     // Activar efecto de highlight
@@ -465,7 +615,28 @@ const Sales = () => {
     }));
   };
 
-  const total = cart.reduce((sum, item) => sum + (item.price_sell * item.quantity), 0);
+  const calculateTotal = (cartItems) => {
+    return cartItems.reduce((sum, item) => {
+      const calc = calculateItemPrice(item);
+      return sum + parseFloat(calc.subtotal);
+    }, 0);
+  };
+
+  const listTotal = cart.reduce((sum, item) => {
+    return sum + (parseFloat(item.price_sell) * parseFloat(item.quantity));
+  }, 0);
+
+  const total = calculateTotal(cart);
+
+  const totalSavings = cart.reduce((sum, item) => {
+    const calc = calculateItemPrice(item);
+    return sum + parseFloat(calc.savings);
+  }, 0);
+
+  const totalItemsCount = cart.reduce((sum, item) => {
+    const isWeight = item.sell_by_weight === true || item.sell_by_weight == 1;
+    return sum + (isWeight ? 1 : parseFloat(item.quantity));
+  }, 0);
 
   const handleCustomerSearch = async (term) => {
     setCustomerSearch(term);
@@ -527,13 +698,19 @@ const Sales = () => {
 
     const saleData = {
       id: uuidv4(),
-      items: currentCart.map(item => ({
-        product_id: item.id,
-        quantity: item.quantity,
-        price_unit: item.price_sell,
-        subtotal: item.price_sell * item.quantity
-      })),
-      total: currentTotal,
+      items: currentCart.map(item => {
+        const calc = calculateItemPrice(item);
+        return {
+          product_id: item.id,
+          quantity: item.quantity,
+          price_unit: parseFloat(calc.effectivePrice),
+          subtotal: parseFloat(calc.subtotal),
+          discount_amount: parseFloat(calc.savings) / item.quantity // Descuento unitario
+        };
+      }),
+      total: calculateTotal(currentCart) - (currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0),
+      subtotal: calculateTotal(currentCart),
+      cash_discount: currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0,
       customer_id: currentCustomer?.id || null,
       payment_method: currentPaymentMethod,
       created_at: new Date().toISOString()
@@ -548,6 +725,17 @@ const Sales = () => {
       }
       
       await db.offlineSales.add({ ...saleData, status: isOnline ? 'synced' : 'pending' });
+      
+      // Actualización optimista del stock en IndexedDB local
+      try {
+        const optimisticUpdates = currentCart.map(item => ({
+          ...item,
+          stock: Math.max(0, (parseFloat(item.stock) || 0) - parseFloat(item.quantity))
+        }));
+        await updateLocalProducts(optimisticUpdates);
+      } catch (optError) {
+        console.error('Error en actualización optimista:', optError);
+      }
       
       setCart([]);
       
@@ -583,15 +771,29 @@ const Sales = () => {
         ...saleData,
         seller_name: user?.username || 'Vendedor',
         customer_name: currentCustomer?.name || 'Anónimo',
-        items: currentCart.map(item => ({
-          ...item,
-          product_name: item.name,
-          discount_amount: item.is_offer ? (Number(item.original_price_sell) - Number(item.price_sell)) : 0
-        }))
+        items: currentCart.map(item => {
+          const calc = calculateItemPrice(item);
+          return {
+            ...item,
+            product_name: item.name,
+            quantity: item.quantity,
+            price_unit: parseFloat(calc.effectivePrice),
+            subtotal: parseFloat(calc.subtotal),
+            discount_amount: parseFloat(calc.savings),
+            promo_details: calc.details
+          };
+        })
       };
 
-      // Impresión automática desactivada - usar "Mis Ventas" para reimprimir
-      // setTimeout(() => printTicket(ticketData), 500);
+      // Imprimir ticket automáticamente
+      if (autoPrint) {
+        axios.post('/api/print', { sale: ticketData })
+          .then(() => console.log('Ticket enviado a impresión directa'))
+          .catch(err => {
+            console.error('Error en impresión directa:', err);
+            toast.error('Error al enviar a la impresora');
+          });
+      }
     } catch (err) {
       console.error(err);
       toast.error('Error al procesar la venta');
@@ -664,16 +866,31 @@ const Sales = () => {
                         <div>
                           <strong>{p.name}</strong>
                           <div className="text-muted x-small">SKU: {p.sku}</div>
+                          {p.promo_type && p.promo_type !== 'none' && (
+                            <div className="mt-1">
+                              {p.promo_type === 'price' && (
+                                <Badge bg="success" className="x-small">💰 Oferta</Badge>
+                              )}
+                              {p.promo_type === 'quantity' && p.promo_buy && p.promo_pay && (
+                                <Badge bg="danger" className="x-small">🔥 {p.promo_buy}×{p.promo_pay}</Badge>
+                              )}
+                              {p.promo_type === 'both' && (
+                                <>
+                                  <Badge bg="success" className="x-small me-1">💰 ${p.price_offer}</Badge>
+                                  <Badge bg="danger" className="x-small">🔥 {p.promo_buy}×{p.promo_pay}</Badge>
+                                </>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       <div className="text-end">
-                        {p.is_offer && (
+                        {p.promo_type === 'price' && p.price_offer && (
                           <div className="text-decoration-line-through text-muted small">${p.price_sell}</div>
                         )}
-                        <div className={`fw-bold ${p.is_offer ? 'text-success' : 'text-primary'}`}>
-                          ${p.is_offer ? p.price_offer : p.price_sell}
+                        <div className={`fw-bold ${p.promo_type === 'price' ? 'text-success' : 'text-primary'}`}>
+                          ${p.promo_type === 'price' ? p.price_offer : p.price_sell}
                         </div>
-                        {p.is_offer && <Badge bg="danger" size="sm">OFERTA</Badge>}
                       </div>
                     </ListGroup.Item>
                   ))}
@@ -710,11 +927,42 @@ const Sales = () => {
                         }}
                       >
                         <td className="text-muted small">
-                          ...{item.sku ? item.sku.slice(-3) : '---'}
+                          {item.sku || '---'}
                         </td>
                         <td>
-                          <div className="fw-bold">{item.name}</div>
-                          {item.is_offer && <Badge bg="danger" className="x-small">OFERTA</Badge>}
+                          <div className="d-flex align-items-center gap-2">
+                            <div 
+                              className="bg-light rounded flex-shrink-0 d-flex align-items-center justify-content-center overflow-hidden" 
+                              style={{ width: '32px', height: '32px', border: '1px solid #eee' }}
+                            >
+                              {item.image_url ? (
+                                <img 
+                                  src={`${item.image_url}`} 
+                                  alt={item.name}
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                />
+                              ) : (
+                                <Search size={14} className="opacity-25" />
+                              )}
+                            </div>
+                            <div>
+                              <div className="fw-bold">{item.name}</div>
+                              <div className="d-flex gap-1">
+                                {item.promo_type === 'price' && (
+                                  <Badge bg="success" className="x-small">💰 Oferta</Badge>
+                                )}
+                                {item.promo_type === 'quantity' && item.promo_buy && item.promo_pay && (
+                                  <Badge bg="danger" className="x-small">🔥 {item.promo_buy}×{item.promo_pay}</Badge>
+                                )}
+                                {item.promo_type === 'both' && (
+                                  <>
+                                    <Badge bg="success" className="x-small me-1">💰 ${item.price_offer}</Badge>
+                                    <Badge bg="danger" className="x-small">🔥 {item.promo_buy}×{item.promo_pay}</Badge>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         </td>
                         <td className="text-center">
                           <div className="d-flex align-items-center justify-content-center gap-2">
@@ -737,10 +985,57 @@ const Sales = () => {
                           </div>
                         </td>
                         <td className="text-end">
-                          {item.is_offer && <div className="text-muted x-small text-decoration-line-through">${item.original_price_sell}</div>}
-                          ${item.price_sell}
+                          {(() => {
+                            const calc = calculateItemPrice(item);
+                            const originalUnit = parseFloat(item.price_sell) * (item.sell_by_weight ? parseFloat(item.quantity) : 1);
+                            const baseUnit = parseFloat(calc.basePrice) * (item.sell_by_weight ? parseFloat(item.quantity) : 1);
+                            
+                            return (
+                              <>
+                                {baseUnit < originalUnit && (
+                                  <div className="text-muted x-small text-decoration-line-through">
+                                    ${originalUnit.toFixed(2)}
+                                  </div>
+                                )}
+                                <div className="fw-bold">${baseUnit.toFixed(2)}</div>
+                                {item.sell_by_weight && (
+                                  <div className="x-small text-muted">@ ${parseFloat(item.price_sell).toFixed(2)}/kg</div>
+                                )}
+                                {calc.details && (
+                                  <div className="text-success x-small" style={{ fontSize: '0.75rem' }}>
+                                    {calc.details}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
                         </td>
-                        <td className="text-end fw-bold">${(item.price_sell * item.quantity).toFixed(2)}</td>
+                        <td className="text-end">
+                          {(() => {
+                            const calc = calculateItemPrice(item);
+                            const originalPrice = parseFloat(item.price_sell); // Precio de lista original
+                            const quantity = parseFloat(item.quantity);
+                            const rawTotalOriginal = originalPrice * quantity;
+                            const finalSubtotal = parseFloat(calc.subtotal);
+                            const savings = parseFloat(calc.savings);
+
+                            return (
+                              <>
+                                {savings > 0 && (
+                                  <div className="text-muted x-small text-decoration-line-through">
+                                    ${rawTotalOriginal.toFixed(2)}
+                                  </div>
+                                )}
+                                <div className="fw-bold">${finalSubtotal.toFixed(2)}</div>
+                                {savings > 0 && (
+                                  <div className="text-danger x-small fw-bold">
+                                    Ahorro: ${savings.toFixed(2)}
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </td>
                         <td className="text-end">
                           <Button variant="link" className="text-danger p-0" onClick={() => removeFromCart(item.id)}>
                             <Trash2 size={18} />
@@ -783,13 +1078,42 @@ const Sales = () => {
               </div>
             </div>
             
+            {/* Eliminado el contador de items superior para evitar repetición */}
+            
             <div className="d-flex justify-content-between mb-2 opacity-75">
-              <span>Items:</span>
-              <span>{cart.length}</span>
+              <span>Total Lista (sin promos):</span>
+              <span>${listTotal.toFixed(2)}</span>
             </div>
-            <div className="d-flex justify-content-between mb-4 border-bottom border-secondary pb-3">
-              <span>Subtotal:</span>
-              <span>${total.toFixed(2)}</span>
+            
+            {totalSavings > 0 && (
+              <div className="d-flex justify-content-between mb-2 text-danger fw-bold">
+                <span>Ahorro en Promos:</span>
+                <span>-${totalSavings.toFixed(2)}</span>
+              </div>
+            )}
+            
+            <div className="d-flex justify-content-between mb-2 border-top pt-2">
+              <span className="fw-bold">Subtotal:</span>
+              <span className="fw-bold">${total.toFixed(2)}</span>
+            </div>
+            
+            {paymentMethod === 'Efectivo' && cashDiscountPercent > 0 && (
+              <div className="d-flex justify-content-between mb-2 text-success">
+                <span>Desc. Efectivo ({cashDiscountPercent}%):</span>
+                <span>-${(total * (cashDiscountPercent / 100)).toFixed(2)}</span>
+              </div>
+            )}
+            
+            <div className="d-flex justify-content-between align-items-center mb-2">
+              <span className="fw-bold h4 mb-0">TOTAL:</span>
+              <span className="fw-bold display-6 text-info">
+                ${(total - (paymentMethod === 'Efectivo' ? total * (cashDiscountPercent / 100) : 0)).toFixed(2)}
+              </span>
+            </div>
+            
+            <div className="text-center bg-primary bg-opacity-10 rounded py-2 border border-primary border-opacity-25 mb-4">
+               <span className="text-primary small fw-bold">CANTIDAD DE PRODUCTOS: </span>
+               <span className="h4 mb-0 text-primary fw-bold">{totalItemsCount}</span>
             </div>
 
             {/* Selector de Cliente */}
@@ -844,10 +1168,7 @@ const Sales = () => {
               )}
             </div>
             
-            <div className="d-flex justify-content-between h3 mb-4">
-              <span>TOTAL</span>
-              <span className="text-info">${total.toFixed(2)}</span>
-            </div>
+            {/* Eliminado el segundo TOTAL redundante */}
 
             <div className="mb-4">
               <Form.Label className="small opacity-75">Forma de Pago</Form.Label>
@@ -867,6 +1188,22 @@ const Sales = () => {
                 <option value="MP">📱 Mercado Pago</option>
                 <option value="Cta Cte">💳 Cta. Cte.</option>
               </Form.Select>
+            </div>
+            
+            <div className="mb-4 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
+               <div className="d-flex align-items-center gap-2">
+                 <Printer size={18} className={autoPrint ? "text-success" : "text-muted"} />
+                 <span className="small">Imprimir ticket auto.</span>
+               </div>
+               <Form.Check 
+                 type="switch"
+                 id="auto-print-switch"
+                 checked={autoPrint}
+                 onChange={(e) => {
+                   setAutoPrint(e.target.checked);
+                   localStorage.setItem('auto_print', e.target.checked);
+                 }}
+               />
             </div>
 
             <Button 
