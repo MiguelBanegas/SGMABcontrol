@@ -5,6 +5,7 @@ exports.getAllProducts = async (req, res) => {
     const products = await db("products")
       .leftJoin("categories", "products.category_id", "categories.id")
       .where("products.active", true)
+      .andWhere("products.business_id", req.user.business_id)
       .select("products.*", "categories.name as category_name");
     res.json(products);
   } catch (error) {
@@ -16,7 +17,9 @@ exports.getAllProducts = async (req, res) => {
 exports.getProductBySku = async (req, res) => {
   const { sku } = req.params;
   try {
-    const product = await db("products").where({ sku, active: true }).first();
+    const product = await db("products")
+      .where({ sku, active: true, business_id: req.user.business_id })
+      .first();
     if (!product)
       return res.status(404).json({ message: "Producto no encontrado" });
     res.json(product);
@@ -63,6 +66,8 @@ exports.createProduct = async (req, res) => {
     return res.status(400).json({ message: "Precio de oferta inválido" });
   }
 
+  const isOffer = is_offer === "true" || is_offer === true;
+
   // Sanitización de datos
   const productData = {
     name,
@@ -77,18 +82,25 @@ exports.createProduct = async (req, res) => {
       category_id === "" || category_id === "null"
         ? null
         : parseInt(category_id),
-    price_offer: pOffer,
-    is_offer: is_offer === "true" || is_offer === true,
+    price_offer: isOffer ? pOffer : null,
+    is_offer: isOffer,
     image_url,
-    promo_buy: req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
-    promo_pay: req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
-    promo_type: req.body.promo_type || "none",
+    promo_buy:
+      isOffer && req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
+    promo_pay:
+      isOffer && req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
+    promo_type: isOffer ? req.body.promo_type || "none" : "none",
+    business_id: req.user.business_id,
   };
 
   try {
     // Verificar si existe un producto inactivo con el mismo SKU
     const existingProduct = await db("products")
-      .where({ sku: productData.sku, active: false })
+      .where({
+        sku: productData.sku,
+        active: false,
+        business_id: req.user.business_id,
+      })
       .first();
 
     if (existingProduct) {
@@ -112,6 +124,7 @@ exports.createProduct = async (req, res) => {
     const newProduct = await db("products")
       .leftJoin("categories", "products.category_id", "categories.id")
       .where("products.id", id)
+      .andWhere("products.business_id", req.user.business_id)
       .select("products.*", "categories.name as category_name")
       .first();
 
@@ -165,6 +178,8 @@ exports.updateProduct = async (req, res) => {
     return res.status(400).json({ message: "Precio de oferta inválido" });
   }
 
+  const isOffer = is_offer === "true" || is_offer === true;
+
   const updateData = {
     name,
     description: description || null,
@@ -178,11 +193,13 @@ exports.updateProduct = async (req, res) => {
       category_id === "" || category_id === "null"
         ? null
         : parseInt(category_id),
-    price_offer: pOffer,
-    is_offer: is_offer === "true" || is_offer === true,
-    promo_buy: req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
-    promo_pay: req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
-    promo_type: req.body.promo_type || "none",
+    price_offer: isOffer ? pOffer : null,
+    is_offer: isOffer,
+    promo_buy:
+      isOffer && req.body.promo_buy ? parseInt(req.body.promo_buy) : null,
+    promo_pay:
+      isOffer && req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
+    promo_type: isOffer ? req.body.promo_type || "none" : "none",
   };
 
   if (req.file) {
@@ -190,7 +207,9 @@ exports.updateProduct = async (req, res) => {
   }
 
   try {
-    await db("products").where({ id }).update(updateData);
+    await db("products")
+      .where({ id, business_id: req.user.business_id })
+      .update(updateData);
 
     // Obtener producto actualizado con categoría para el delta
     const updatedProduct = await db("products")
@@ -214,7 +233,9 @@ exports.deleteProduct = async (req, res) => {
   const { id } = req.params;
   try {
     // Desactivación lógica en lugar de eliminación física
-    await db("products").where({ id }).update({ active: false });
+    await db("products")
+      .where({ id, business_id: req.user.business_id })
+      .update({ active: false });
 
     // Notificar que este producto ya no es válido (enviamos el objeto con active false)
     req.app
@@ -231,7 +252,7 @@ exports.deleteProduct = async (req, res) => {
 exports.getCategories = async (req, res) => {
   try {
     const categories = await db("categories")
-      .where("active", true)
+      .where({ active: true, business_id: req.user.business_id })
       .select("*")
       .orderBy("name", "asc");
     res.json(categories);
@@ -247,7 +268,9 @@ exports.createCategory = async (req, res) => {
     return res.status(400).json({ message: "El nombre es obligatorio" });
 
   try {
-    const [id] = await db("categories").insert({ name }).returning("id");
+    const [id] = await db("categories")
+      .insert({ name, business_id: req.user.business_id })
+      .returning("id");
     res.status(201).json({ id, name, message: "Categoría creada con éxito" });
   } catch (error) {
     console.error("Error al crear categoría:", error);
@@ -259,7 +282,9 @@ exports.deleteCategory = async (req, res) => {
   const { id } = req.params;
   try {
     // Desactivación lógica en lugar de eliminación física
-    await db("categories").where({ id }).update({ active: false });
+    await db("categories")
+      .where({ id, business_id: req.user.business_id })
+      .update({ active: false });
     res.json({ message: "Categoría desactivada" });
   } catch (error) {
     console.error("Error en deleteCategory:", error);
@@ -269,10 +294,14 @@ exports.deleteCategory = async (req, res) => {
 
 exports.getProductStats = async (req, res) => {
   try {
-    const totalProducts = await db("products").count("id as count").first();
+    const totalProducts = await db("products")
+      .where({ business_id: req.user.business_id })
+      .count("id as count")
+      .first();
     const lowStockProducts = await db("products")
       .leftJoin("categories", "products.category_id", "categories.id")
-      .where("stock", "<", 5)
+      .where("products.stock", "<", 5)
+      .andWhere("products.business_id", req.user.business_id)
       .select("products.*", "categories.name as category_name")
       .orderBy("stock", "asc");
 
@@ -292,9 +321,11 @@ exports.getProductStats = async (req, res) => {
 exports.getTopSellers = async (req, res) => {
   try {
     const topSellers = await db("sale_items")
-      .select("product_id")
-      .sum("quantity as total_sold")
-      .groupBy("product_id")
+      .join("sales", "sale_items.sale_id", "sales.id")
+      .where("sales.business_id", req.user.business_id)
+      .select("sale_items.product_id")
+      .sum("sale_items.quantity as total_sold")
+      .groupBy("sale_items.product_id")
       .orderBy("total_sold", "desc")
       .limit(20);
 
@@ -302,7 +333,10 @@ exports.getTopSellers = async (req, res) => {
 
     const products = await db("products")
       .whereIn("products.id", productIds)
-      .where("products.active", true)
+      .where({
+        "products.active": true,
+        "products.business_id": req.user.business_id,
+      })
       .leftJoin("categories", "products.category_id", "categories.id")
       .select("products.*", "categories.name as category_name");
 
@@ -333,7 +367,9 @@ exports.adjustStock = async (req, res) => {
 
   try {
     await db.transaction(async (trx) => {
-      const product = await trx("products").where({ id }).first();
+      const product = await trx("products")
+        .where({ id, business_id: req.user.business_id })
+        .first();
       if (!product) {
         throw new Error("Producto no encontrado");
       }
@@ -343,7 +379,9 @@ exports.adjustStock = async (req, res) => {
         throw new Error("El stock resultante no puede ser negativo");
       }
 
-      await trx("products").where({ id }).update({ stock: newStock });
+      await trx("products")
+        .where({ id, business_id: req.user.business_id })
+        .update({ stock: newStock });
     });
 
     // Obtener producto actualizado para el delta
@@ -361,5 +399,88 @@ exports.adjustStock = async (req, res) => {
       message: error.message || "Error interno al ajustar stock",
       error: error.message,
     });
+  }
+};
+
+exports.patchProduct = async (req, res) => {
+  const { id } = req.params;
+  const updates = req.body;
+
+  try {
+    const product = await db("products")
+      .where({ id, business_id: req.user.business_id })
+      .first();
+
+    if (!product) {
+      return res.status(404).json({ message: "Producto no encontrado" });
+    }
+
+    // No permitir actualizar id o business_id
+    delete updates.id;
+    delete updates.business_id;
+
+    await db("products")
+      .where({ id, business_id: req.user.business_id })
+      .update(updates);
+
+    const updatedProduct = await db("products")
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .where("products.id", id)
+      .select("products.*", "categories.name as category_name")
+      .first();
+
+    // Emitir socket para que todos los clientes vean el cambio
+    req.app.get("io").emit("catalog_updated", [updatedProduct]);
+
+    res.json({
+      message: "Producto actualizado parcialmente",
+      product: updatedProduct,
+    });
+  } catch (error) {
+    console.error("Error en patchProduct:", error);
+    res.status(500).json({
+      message: "Error al actualizar el producto",
+      error: error.message,
+    });
+  }
+};
+
+exports.searchProducts = async (req, res) => {
+  const { q } = req.query;
+
+  if (!q || q.length < 2) {
+    return res.json([]);
+  }
+
+  try {
+    const searchTerm = `%${q.toLowerCase()}%`;
+
+    const products = await db("products")
+      .where("products.business_id", req.user.business_id)
+      .andWhere("products.active", true)
+      .andWhere(function () {
+        this.whereRaw("LOWER(products.name) LIKE ?", [searchTerm]).orWhereRaw(
+          "LOWER(products.sku) LIKE ?",
+          [searchTerm]
+        );
+      })
+      .leftJoin("categories", "products.category_id", "categories.id")
+      .select("products.*", "categories.name as category_name")
+      .limit(100)
+      .orderByRaw(
+        `
+        CASE 
+          WHEN LOWER(products.name) LIKE ? THEN 1
+          WHEN LOWER(products.sku) LIKE ? THEN 2
+          ELSE 3
+        END, LOWER(products.name)
+      `,
+        [`${q.toLowerCase()}%`, `${q.toLowerCase()}%`]
+      );
+
+    res.json(products);
+  } catch (error) {
+    console.error("Error en searchProducts:", error);
+    res.status(500).json({ message: "Error al buscar productos" });
   }
 };

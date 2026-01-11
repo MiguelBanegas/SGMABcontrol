@@ -1,14 +1,41 @@
 const db = require("../db");
 
 exports.createSale = async (req, res) => {
-  const { id, items, customer_id, created_at, payment_method } = req.body;
+  const {
+    id,
+    items,
+    customer_id,
+    created_at,
+    payment_method,
+    amount_paid,
+    change_given,
+    debt_amount,
+  } = req.body;
   const user_id = req.user.id;
+
+  // Debug: Log payment data
+  console.log("Payment data received:", {
+    amount_paid,
+    change_given,
+    debt_amount,
+    customer_id,
+  });
+
+  // Validación: Si hay deuda, debe haber cliente
+  if (debt_amount && debt_amount > 0 && !customer_id) {
+    return res.status(400).json({
+      message: "No se puede registrar una deuda sin un cliente asociado",
+    });
+  }
 
   const trx = await db.transaction();
   try {
     // Obtener descuento por efectivo desde settings
     const cashDiscountSetting = await trx("settings")
-      .where({ key: "cash_discount_percent" })
+      .where({
+        key: "cash_discount_percent",
+        business_id: req.user.business_id,
+      })
       .first();
     const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
 
@@ -18,7 +45,7 @@ exports.createSale = async (req, res) => {
     // Procesar cada item y calcular promociones
     for (const item of items) {
       const product = await trx("products")
-        .where({ id: item.product_id })
+        .where({ id: item.product_id, business_id: req.user.business_id })
         .first();
 
       let itemTotal = 0;
@@ -104,26 +131,182 @@ exports.createSale = async (req, res) => {
 
     const total = subtotal - cashDiscount;
 
-    // Guardar venta
+    // Guardar venta (creditUsed se calculará después)
+    const finalDebtAfterCredit = 0; // Se calculará después
+
     await trx("sales").insert({
       id,
       user_id,
+      business_id: req.user.business_id,
       customer_id: customer_id || null,
       subtotal,
       cash_discount: cashDiscount,
       total,
       payment_method: payment_method || "Efectivo",
-      status: payment_method === "Cta Cte" ? "pendiente" : "completado",
+      amount_paid: amount_paid || null,
+      change_given: change_given || null,
+      debt_amount: null, // Initial debt is null, will be updated
+      credit_applied: 0, // Initial credit applied is 0, will be updated
+      status: "completado", // Initial status, will be updated
+      settled_at: null, // Initial settled_at, will be updated
       created_at: created_at || trx.fn.now(),
     });
 
     // Guardar items
     await trx("sale_items").insert(saleItems);
 
+    // Registrar transacción en cuenta corriente del cliente (Siempre que haya cliente para trazabilidad)
+    if (customer_id) {
+      // Obtener el cliente para verificar si es Consumidor Final
+      const customer = await trx("customers")
+        .where({ id: customer_id })
+        .first();
+
+      if (customer && !customer.name.toLowerCase().includes("cons. final")) {
+        // Calcular cuánto pagó realmente (descontando el vuelto)
+        const netPaid =
+          parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+        const remainingDebt = total - netPaid; // Deuda después del pago en efectivo
+
+        // Obtener el balance ANTES de esta venta para la condición
+        const lastTxBeforeCondition = await trx("customer_account_transactions")
+          .where({ customer_id, business_id: req.user.business_id })
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .first();
+        const balanceBeforeSale = lastTxBeforeCondition
+          ? parseFloat(lastTxBeforeCondition.balance)
+          : 0;
+
+        // Solo registrar transacciones si hay deuda o crédito involucrado
+        if (remainingDebt > 0.01 || balanceBeforeSale < 0) {
+          const creditAvailable =
+            balanceBeforeSale < 0 ? Math.abs(balanceBeforeSale) : 0;
+
+          // 1. Registrar la VENTA completa como Deuda
+          let currentBalance = balanceBeforeSale + total;
+          await trx("customer_account_transactions").insert({
+            customer_id,
+            sale_id: id,
+            type: "debt",
+            amount: total,
+            balance: currentBalance,
+            description: `Venta #${id.substring(0, 8)} (Total: $${total.toFixed(
+              2
+            )})`,
+            business_id: req.user.business_id,
+          });
+
+          // 2. Registrar el PAGO en efectivo si hubo
+          if (netPaid > 0) {
+            currentBalance -= netPaid;
+            await trx("customer_account_transactions").insert({
+              customer_id,
+              sale_id: id,
+              type: "payment",
+              amount: netPaid,
+              balance: currentBalance,
+              description: `Pago contado en Venta #${id.substring(0, 8)}`,
+              business_id: req.user.business_id,
+            });
+          }
+
+          // 3. Aplicar CRÉDITO si había saldo a favor ANTES de la venta
+          console.log(
+            "DEBUG: balanceBeforeSale=",
+            balanceBeforeSale,
+            "creditAvailable=",
+            creditAvailable,
+            "currentBalance=",
+            currentBalance
+          );
+          let creditUsed = 0;
+
+          // Si tenía crédito (balance negativo) y ahora tiene deuda (balance positivo)
+          if (creditAvailable > 0 && currentBalance > 0) {
+            creditUsed = Math.min(creditAvailable, currentBalance);
+            currentBalance -= creditUsed;
+            console.log(
+              "DEBUG: Applying credit. creditUsed=",
+              creditUsed,
+              "new currentBalance=",
+              currentBalance
+            );
+
+            await trx("customer_account_transactions").insert({
+              customer_id,
+              sale_id: id,
+              type: "payment",
+              amount: creditUsed,
+              balance: currentBalance,
+              description: `Crédito aplicado en Venta #${id.substring(0, 8)}`,
+              business_id: req.user.business_id,
+            });
+
+            // Actualizar credit_applied en la venta
+            await trx("sales")
+              .where({ id })
+              .update({
+                credit_applied: creditUsed,
+                debt_amount: currentBalance > 0 ? currentBalance : null,
+                status: currentBalance > 0 ? "pendiente" : "completado",
+                settled_at: currentBalance <= 0 ? trx.fn.now() : null,
+              });
+          } else if (creditAvailable > 0 && currentBalance <= 0) {
+            // El crédito cubrió TODA la deuda y aún sobra
+            creditUsed = total - netPaid; // Usó exactamente lo necesario para cubrir la deuda
+            console.log(
+              "DEBUG: Credit covered all debt. creditUsed=",
+              creditUsed,
+              "remaining credit=",
+              Math.abs(currentBalance)
+            );
+
+            await trx("customer_account_transactions").insert({
+              customer_id,
+              sale_id: id,
+              type: "payment",
+              amount: creditUsed,
+              balance: currentBalance,
+              description: `Crédito aplicado en Venta #${id.substring(0, 8)}`,
+              business_id: req.user.business_id,
+            });
+
+            // Actualizar credit_applied en la venta
+            await trx("sales").where({ id }).update({
+              credit_applied: creditUsed,
+              debt_amount: null,
+              status: "completado",
+              settled_at: trx.fn.now(),
+            });
+          } else {
+            // Si no se aplicó crédito, actualizar la venta con la deuda actual
+            await trx("sales")
+              .where({ id })
+              .update({
+                debt_amount: currentBalance > 0 ? currentBalance : null,
+                status: currentBalance > 0 ? "pendiente" : "completado",
+                settled_at: currentBalance <= 0 ? trx.fn.now() : null,
+              });
+          }
+
+          console.log(
+            "Traceability split transactions recorded successfully. Final Customer Balance:",
+            currentBalance
+          );
+        } else {
+          // Venta pagada completamente en efectivo, no hay deuda
+          console.log(
+            "Sale fully paid in cash, no customer account transactions needed."
+          );
+        }
+      }
+    }
+
     // Actualizar stock
     for (const item of items) {
       await trx("products")
-        .where({ id: item.product_id })
+        .where({ id: item.product_id, business_id: req.user.business_id })
         .decrement("stock", item.quantity);
     }
 
@@ -135,6 +318,7 @@ exports.createSale = async (req, res) => {
       const updatedProducts = await db("products")
         .leftJoin("categories", "products.category_id", "categories.id")
         .whereIn("products.id", productIds)
+        .andWhere("products.business_id", req.user.business_id)
         .select("products.*", "categories.name as category_name");
 
       req.app.get("io").emit("catalog_updated", updatedProducts);
@@ -166,6 +350,7 @@ exports.getSalesStats = async (req, res) => {
   try {
     // 1. Obtener totales diarios de ventas (sin usar DISTINCT para evitar errores)
     const salesData = await db("sales")
+      .where({ business_id: req.user.business_id })
       .select(
         db.raw("DATE(created_at) as date"),
         db.raw("SUM(total)::FLOAT as total_day")
@@ -180,6 +365,7 @@ exports.getSalesStats = async (req, res) => {
         const costRes = await db("sale_items")
           .join("sales", "sale_items.sale_id", "sales.id")
           .whereRaw("DATE(sales.created_at) = ?", [dayStat.date])
+          .andWhere("sales.business_id", req.user.business_id)
           .select(
             db.raw(
               "SUM(sale_items.quantity * COALESCE(sale_items.cost_at_sale, 0))::FLOAT as total_cost"
@@ -208,6 +394,7 @@ exports.getSalesHistory = async (req, res) => {
     const sales = await db("sales")
       .leftJoin("users", "sales.user_id", "users.id")
       .leftJoin("customers", "sales.customer_id", "customers.id")
+      .where("sales.business_id", req.user.business_id)
       .select(
         "sales.*",
         "users.username as seller_name",
@@ -237,7 +424,9 @@ exports.toggleSaleStatus = async (req, res) => {
   const { status } = req.body;
 
   try {
-    await db("sales").where({ id }).update({ status });
+    await db("sales")
+      .where({ id, business_id: req.user.business_id })
+      .update({ status });
     req.app.get("io").emit("sales_updated");
     res.json({ message: "Estado de venta actualizado" });
   } catch (error) {
@@ -251,7 +440,9 @@ exports.getPendingSale = async (req, res) => {
   const user_id = req.user.id;
 
   try {
-    const pendingSale = await db("pending_sales").where({ user_id }).first();
+    const pendingSale = await db("pending_sales")
+      .where({ user_id, business_id: req.user.business_id })
+      .first();
 
     if (!pendingSale) {
       return res.json(null);
@@ -278,12 +469,14 @@ exports.savePendingSale = async (req, res) => {
     const cartData = JSON.stringify(cart);
 
     // Verificar si ya existe una venta en progreso para este usuario
-    const existing = await db("pending_sales").where({ user_id }).first();
+    const existing = await db("pending_sales")
+      .where({ user_id, business_id: req.user.business_id })
+      .first();
 
     if (existing) {
       // Actualizar
       await db("pending_sales")
-        .where({ user_id })
+        .where({ user_id, business_id: req.user.business_id })
         .update({
           cart_data: cartData,
           customer_id: customer_id || null,
@@ -294,6 +487,7 @@ exports.savePendingSale = async (req, res) => {
       // Insertar
       await db("pending_sales").insert({
         user_id,
+        business_id: req.user.business_id,
         cart_data: cartData,
         customer_id: customer_id || null,
         payment_method: payment_method || "Efectivo",
@@ -312,7 +506,9 @@ exports.clearPendingSale = async (req, res) => {
   const user_id = req.user.id;
 
   try {
-    await db("pending_sales").where({ user_id }).delete();
+    await db("pending_sales")
+      .where({ user_id, business_id: req.user.business_id })
+      .delete();
     res.json({ message: "Venta en progreso eliminada" });
   } catch (error) {
     console.error("Error en clearPendingSale:", error);
@@ -338,7 +534,7 @@ exports.getMySales = async (req, res) => {
 
     // Obtener total de ventas del usuario (limitado a 100)
     const totalResult = await db("sales")
-      .where({ user_id })
+      .where({ user_id, business_id: req.user.business_id })
       .count("* as count")
       .first();
 
@@ -347,7 +543,10 @@ exports.getMySales = async (req, res) => {
     // Obtener ventas de la página actual
     const sales = await db("sales")
       .leftJoin("customers", "sales.customer_id", "customers.id")
-      .where({ "sales.user_id": user_id })
+      .where({
+        "sales.user_id": user_id,
+        "sales.business_id": req.user.business_id,
+      })
       .select("sales.*", "customers.name as customer_name")
       .orderBy("sales.created_at", "desc")
       .limit(perPage)
@@ -374,5 +573,105 @@ exports.getMySales = async (req, res) => {
   } catch (error) {
     console.error("Error en getMySales:", error);
     res.status(500).json({ message: "Error al obtener ventas" });
+  }
+};
+
+exports.getSaleDetail = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const sale = await db("sales")
+      .leftJoin("customers", "sales.customer_id", "customers.id")
+      .leftJoin("users", "sales.user_id", "users.id")
+      .where({
+        "sales.id": id,
+        "sales.business_id": req.user.business_id,
+      })
+      .select(
+        "sales.*",
+        "customers.name as customer_name",
+        "users.username as seller_name"
+      )
+      .first();
+
+    if (!sale) {
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+
+    const items = await db("sale_items")
+      .join("products", "sale_items.product_id", "products.id")
+      .where({ sale_id: sale.id })
+      .select("sale_items.*", "products.name as product_name");
+
+    res.json({ ...sale, items });
+  } catch (error) {
+    console.error("Error en getSaleDetail:", error);
+    res.status(500).json({ message: "Error al obtener detalle de la venta" });
+  }
+};
+
+// Obtener estadísticas de ventas por producto
+exports.getProductSalesStats = async (req, res) => {
+  const { productId } = req.params;
+  const { days = 30 } = req.query;
+
+  try {
+    // Obtener producto
+    const product = await db("products")
+      .where({ id: productId, business_id: req.user.business_id })
+      .first();
+
+    if (!product) {
+      return res.status(404).json({ message: "Producto no encontrado" });
+    }
+
+    // Calcular fecha de inicio
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Obtener ventas agrupadas por fecha
+    const timeline = await db("sale_items")
+      .join("sales", "sale_items.sale_id", "sales.id")
+      .where("sale_items.product_id", productId)
+      .where("sales.business_id", req.user.business_id)
+      .where("sales.created_at", ">=", startDate)
+      .select(
+        db.raw("DATE(sales.created_at) as date"),
+        db.raw("SUM(sale_items.quantity)::FLOAT as quantity"),
+        db.raw("SUM(sale_items.subtotal)::FLOAT as revenue")
+      )
+      .groupBy(db.raw("DATE(sales.created_at)"))
+      .orderBy("date", "asc");
+
+    // Calcular estadísticas
+    const totalQuantity = timeline.reduce(
+      (sum, day) => sum + parseFloat(day.quantity || 0),
+      0
+    );
+    const totalRevenue = timeline.reduce(
+      (sum, day) => sum + parseFloat(day.revenue || 0),
+      0
+    );
+    const averageDaily = totalQuantity / parseInt(days);
+
+    res.json({
+      product: {
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        price_sell: product.price_sell,
+      },
+      stats: {
+        totalQuantity,
+        totalRevenue,
+        averageDaily,
+        days: parseInt(days),
+      },
+      timeline,
+    });
+  } catch (error) {
+    console.error("Error en getProductSalesStats:", error);
+    res
+      .status(500)
+      .json({ message: "Error al obtener estadísticas del producto" });
   }
 };

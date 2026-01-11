@@ -17,14 +17,24 @@ exports.login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
+      {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        business_id: user.business_id,
+      },
       process.env.JWT_SECRET || "supersecretkey",
       { expiresIn: "8h" }
     );
 
     res.json({
       token,
-      user: { id: user.id, username: user.username, role: user.role },
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        business_id: user.business_id,
+      },
     });
   } catch (error) {
     console.error(error);
@@ -33,7 +43,7 @@ exports.login = async (req, res) => {
 };
 
 exports.register = async (req, res) => {
-  const { username, password, role } = req.body;
+  const { username, password, role, business_id } = req.body;
 
   try {
     const existingUser = await db("users").where({ username }).first();
@@ -47,6 +57,7 @@ exports.register = async (req, res) => {
         username,
         password: hashedPassword,
         role: role || "vendedor",
+        business_id: business_id || 1, // Por ahora default al 1 si no se envía
       })
       .returning("id");
 

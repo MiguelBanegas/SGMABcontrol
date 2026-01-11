@@ -17,6 +17,8 @@ const Stock = () => {
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [showScanner, setShowScanner] = useState(false);
   const searchInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+  const searchResultsRef = useRef(null);
 
   const fetchProducts = async () => {
     try {
@@ -74,6 +76,19 @@ const Stock = () => {
     return () => socket.off('catalog_updated', handleUpdate);
   }, [editingProduct]);
 
+  // Auto-scroll para mantener visible el item seleccionado
+  useEffect(() => {
+    if (selectedIndex >= 0 && searchResultsRef.current) {
+      const selectedItem = searchResultsRef.current.children[selectedIndex];
+      if (selectedItem) {
+        selectedItem.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [selectedIndex]);
+
   const filteredProducts = searchTerm.length >= 3 
     ? products.filter(p => 
         p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -93,20 +108,40 @@ const Stock = () => {
   const handleSearchChange = (e) => {
     const term = e.target.value;
     setSearchTerm(term);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
     if (term.length >= 3) {
-      const filtered = products.filter(p => 
-        p.name.toLowerCase().includes(term.toLowerCase()) || 
-        p.sku.toLowerCase().includes(term.toLowerCase())
-      ).slice(0, 8);
-      setSearchResults(filtered);
-      setSelectedIndex(filtered.length > 0 ? 0 : -1);
+      searchTimeoutRef.current = setTimeout(async () => {
+        const startTime = performance.now();
+        
+        try {
+          const token = localStorage.getItem('token');
+          const response = await axios.get(`/api/products/search?q=${encodeURIComponent(term)}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          const endTime = performance.now();
+          const searchTime = (endTime - startTime).toFixed(2);
+          console.log(`🔍 Búsqueda Stock (server): ${searchTime}ms - ${response.data.length} resultados`);
+          
+          setSearchResults(response.data);
+          setSelectedIndex(response.data.length > 0 ? 0 : -1);
+        } catch (error) {
+          console.error('Error en búsqueda:', error);
+          setSearchResults([]);
+          setSelectedIndex(-1);
+        }
+      }, 100); // 100ms de debounce
     } else {
       setSearchResults([]);
       setSelectedIndex(-1);
     }
   };
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = async (e) => {
     if (searchResults.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -120,19 +155,33 @@ const Stock = () => {
       }
     } else if (e.key === 'Enter' && searchTerm.length > 0) {
       // Búsqueda exacta por SKU para escáner
-      const exactMatch = products.find(p => p.sku === searchTerm);
-      if (exactMatch) {
-        handleEditProduct(exactMatch);
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`/api/products/sku/${searchTerm}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.data) {
+          handleEditProduct(response.data);
+        }
+      } catch (error) {
+        console.log('Producto no encontrado');
       }
     }
   };
 
-  const handleCameraScan = (decodedText) => {
+  const handleCameraScan = async (decodedText) => {
     setShowScanner(false);
     setSearchTerm(decodedText);
-    const exactMatch = products.find(p => p.sku === decodedText);
-    if (exactMatch) {
-      handleEditProduct(exactMatch);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`/api/products/sku/${decodedText}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (response.data) {
+        handleEditProduct(response.data);
+      }
+    } catch (error) {
+      console.log('Producto no encontrado');
     }
   };
 
@@ -175,8 +224,15 @@ const Stock = () => {
 
           {searchResults.length > 0 && (
             <ListGroup 
-              className="position-absolute w-100 shadow-lg mt-1" 
-              style={{ zIndex: 1050, left: 12, width: 'calc(100% - 24px)' }}
+              ref={searchResultsRef}
+              className="position-absolute w-100 shadow-lg mt-1 custom-scrollbar" 
+              style={{ 
+                zIndex: 1050, 
+                left: 12, 
+                width: 'calc(100% - 24px)',
+                maxHeight: '400px',
+                overflowY: 'auto'
+              }}
             >
               {searchResults.map((p, idx) => (
                 <ListGroup.Item
@@ -186,7 +242,7 @@ const Stock = () => {
                   onClick={() => handleEditProduct(p)}
                   className="d-flex align-items-center"
                 >
-                  <div className="me-3" style={{ width: '40px', height: '40px', overflow: 'hidden', borderRadius: '4px' }}>
+                  <div className="me-3" style={{ width: '80px', height: '80px', overflow: 'hidden', borderRadius: '4px' }}>
                     {p.image_url ? (
                       <img src={`${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
@@ -294,12 +350,39 @@ const Stock = () => {
               </div>
               <Card.Body className="d-flex flex-column">
                 <Card.Title className="h6 mb-2 text-truncate" title={product.name}>{product.name}</Card.Title>
-                <div className="d-flex justify-content-between align-items-center mt-auto">
+                <div className="d-flex justify-content-between align-items-center mb-2">
                   <div className="text-primary font-weight-bold h5 mb-0">${product.price_sell}</div>
-                  <Badge bg={product.stock > 10 ? "success" : "warning"} pill>
+                  <Badge bg={product.stock > 10 ? "success" : product.stock > 0 ? "warning" : "danger"} pill>
                     Stock: {Math.floor(product.stock)}
                   </Badge>
                 </div>
+                <InputGroup size="sm" className="mt-auto">
+                  <InputGroup.Text className="bg-light border-end-0">
+                    <Package size={14} />
+                  </InputGroup.Text>
+                  <Form.Control 
+                    type="number" 
+                    placeholder="+/- stock"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.stopPropagation();
+                        const adjustment = parseFloat(e.target.value);
+                        if (!isNaN(adjustment) && adjustment !== 0) {
+                          const newStock = Math.max(0, product.stock + adjustment);
+                          axios.patch(`/api/products/${product.id}`, 
+                            { stock: newStock },
+                            { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                          ).then(() => {
+                            e.target.value = '';
+                            fetchProducts();
+                            fetchTopSellers();
+                          }).catch(err => console.error('Error updating stock:', err));
+                        }
+                      }
+                    }}
+                  />
+                </InputGroup>
               </Card.Body>
             </Card>
           </Col>

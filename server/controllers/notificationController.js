@@ -7,6 +7,7 @@ exports.createNotification = async (req, res) => {
   try {
     await db("notifications").insert({
       user_id,
+      business_id: req.user.business_id,
       message,
       type: type || "nota",
       created_at: db.fn.now(),
@@ -23,6 +24,7 @@ exports.getNotifications = async (req, res) => {
   try {
     const notifications = await db("notifications")
       .join("users", "notifications.user_id", "users.id")
+      .where("notifications.business_id", req.user.business_id)
       .select("notifications.*", "users.username as sender_name")
       .orderBy("created_at", "desc");
     res.json(notifications);
@@ -35,7 +37,9 @@ exports.getNotifications = async (req, res) => {
 exports.markAsRead = async (req, res) => {
   const { id } = req.params;
   try {
-    await db("notifications").where({ id }).update({ is_read: true });
+    await db("notifications")
+      .where({ id, business_id: req.user.business_id })
+      .update({ is_read: true });
     res.json({ message: "Notificación marcada como leída" });
   } catch (error) {
     console.error(error);

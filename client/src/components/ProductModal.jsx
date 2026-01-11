@@ -3,7 +3,7 @@ import { Modal, Button, Form, Row, Col, Alert, InputGroup, Badge, ListGroup } fr
 import { Camera, Upload, X, Plus, Trash2 } from 'lucide-react';
 import BarcodeScanner from './BarcodeScanner';
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, categories, editProduct, allProducts = [] }) => {
   const [nameMatches, setNameMatches] = useState([]);
@@ -36,6 +36,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   const [error, setError] = useState('');
   const skuRef = useRef(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [stockAdjustment, setStockAdjustment] = useState('');
 
   React.useEffect(() => {
     if (editProduct) {
@@ -63,6 +65,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     setNameMatches([]);
     setSelectedIndex(0);
     setSkuMatch(null);
+    setShowConfirmation(false);
   }, [editProduct, show]);
 
   React.useEffect(() => {
@@ -122,6 +125,31 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     }
 
     setFormData({ ...formData, [name]: value });
+  };
+
+  const handleStockAdjustment = async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const adjustment = parseFloat(stockAdjustment);
+      if (!isNaN(adjustment) && adjustment !== 0) {
+        try {
+          const newStock = Math.max(0, (parseFloat(formData.stock) || 0) + adjustment);
+          const token = localStorage.getItem('token');
+          await axios.patch(`/api/products/${editProduct.id}`, 
+            { stock: newStock },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          
+          setFormData(prev => ({ ...prev, stock: newStock }));
+          setStockAdjustment('');
+          toast.success('Stock actualizado');
+          refreshProducts();
+        } catch (err) {
+          console.error('Error al ajustar stock:', err);
+          toast.error('Error al actualizar stock');
+        }
+      }
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -203,11 +231,29 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     setShowCamera(false);
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
+    if (skuMatch) {
+      toast.error('El SKU ya existe');
+      return;
+    }
+    setShowConfirmation(true);
+  };
+
+  const handleFinalSubmit = async () => {
     setError('');
     const data = new FormData();
-    Object.keys(formData).forEach(key => data.append(key, formData[key]));
+    const finalFormData = { ...formData };
+    
+    // Si no es oferta, limpiar campos de promoción para evitar inconsistencias
+    if (!finalFormData.is_offer) {
+      finalFormData.price_offer = '';
+      finalFormData.promo_type = 'none';
+      finalFormData.promo_buy = '';
+      finalFormData.promo_pay = '';
+    }
+
+    Object.keys(finalFormData).forEach(key => data.append(key, finalFormData[key]));
     if (image) data.append('image', image);
 
     try {
@@ -224,19 +270,18 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       refreshProducts();
       
       if (editProduct) {
-        // Si es edición, cerrar el modal
         handleClose();
       } else {
-        // Si es nuevo, limpiar el formulario y mantener abierto
         setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false });
         setImage(null);
         setPreview(null);
         setError('');
-        // Enfocar el campo SKU para el siguiente producto
+        setShowConfirmation(false);
         setTimeout(() => skuRef.current?.focus(), 100);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Error al guardar el producto');
+      setShowConfirmation(false);
     }
   };
 
@@ -284,321 +329,417 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       <Form onSubmit={handleSubmit}>
         <Modal.Body>
           {error && <Alert variant="danger">{error}</Alert>}
-          <Row>
-            <Col md={6}>
-              <Form.Group className="mb-3">
-                <Form.Label className="fw-bold">1. SKU / Código de Barras</Form.Label>
-                <InputGroup hasValidation>
-                  <Form.Control 
-                    name="sku" 
-                    value={formData.sku} 
-                    onChange={handleInputChange} 
-                    ref={skuRef}
-                    required 
-                    isInvalid={!!skuMatch}
-                    placeholder="Escanee o escriba el código..."
-                    autoFocus={!editProduct}
-                  />
-                  <Button variant="outline-secondary" onClick={() => setShowScanner(true)}>
-                    <Camera size={18} />
-                  </Button>
-                  <Form.Control.Feedback type="invalid">
-                    {skuMatch && `Ya existe: ${skuMatch.name}`}
-                  </Form.Control.Feedback>
-                </InputGroup>
-                {skuMatch && (
-                  <Alert variant="warning" className="pt-1 pb-1 mt-1 mb-0 small border-0 bg-transparent text-danger p-0 fw-bold">
-                    ⚠️ Este código ya pertenece a "{skuMatch.name}"
-                  </Alert>
-                )}
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Label className="fw-bold">2. Nombre del Producto</Form.Label>
-                <Form.Control 
-                  name="name" 
-                  value={formData.name} 
-                  onChange={handleInputChange} 
-                  onKeyDown={handleKeyDown}
-                  ref={nameRef} 
-                  required 
-                  placeholder="Ej: Jugo Clight Limonada"
-                />
-                {nameMatches.length > 0 && (
-                  <div className="position-relative">
-                    <ListGroup className="position-absolute w-100 shadow-sm z-index-1000 mt-1" style={{ zIndex: 1050 }}>
-                      {nameMatches.map((m, idx) => (
-                        <ListGroup.Item 
-                          key={m.id} 
-                          action 
-                          active={idx === selectedIndex}
-                          onClick={() => selectSimilarProduct(m)}
-                          className="d-flex justify-content-between align-items-center py-2"
-                        >
-                          <div>
-                            <div className="fw-bold small">{m.name}</div>
-                            <small className={idx === selectedIndex ? "text-white" : "text-muted"}>Precio: ${m.price_sell}</small>
-                          </div>
-                          <Badge bg={idx === selectedIndex ? "light" : "info"} text={idx === selectedIndex ? "dark" : "white"} pill className="small">Usar Base</Badge>
-                        </ListGroup.Item>
-                      ))}
-                    </ListGroup>
-                  </div>
-                )}
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <Form.Label className="mb-0 fw-bold">3. Categoría</Form.Label>
-                  <Button 
-                    variant="link" 
-                    size="sm" 
-                    className="p-0 text-decoration-none" 
-                    onClick={() => setShowCatManager(!showCatManager)}
-                  >
-                    {showCatManager ? 'Cerrar Gestor' : 'Gestionar Categorías'}
-                  </Button>
-                </div>
-                {showCatManager ? (
-                  <div className="bg-light p-2 rounded border mb-2">
-                    <InputGroup size="sm" className="mb-2">
-                      <Form.Control 
-                        placeholder="Nueva categoría..." 
-                        value={newCatName}
-                        onChange={(e) => setNewCatName(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
-                      />
-                      <Button variant="success" onClick={handleAddCategory}>
-                        <Plus size={16} />
-                      </Button>
-                    </InputGroup>
-                    <div className="d-flex flex-wrap gap-1" style={{ maxHeight: '100px', overflowY: 'auto' }}>
-                      {categories.map(cat => (
-                        <Badge 
-                          key={cat.id} 
-                          bg="secondary" 
-                          className="d-flex align-items-center gap-1"
-                          style={{ cursor: 'default' }}
-                        >
-                          {cat.name}
-                          <X 
-                            size={12} 
-                            style={{ cursor: 'pointer' }} 
-                            onClick={() => handleDeleteCategory(cat.id)}
-                          />
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <Form.Select name="category_id" value={formData.category_id} onChange={handleInputChange}>
-                    <option value="">Sin Categoría</option>
-                    {categories.map(cat => (
-                      <option key={cat.id} value={cat.id}>{cat.name}</option>
-                    ))}
-                  </Form.Select>
-                )}
-              </Form.Group>
-              <Form.Group className="mb-3">
-                <Form.Label>Descripción</Form.Label>
-                <Form.Control 
-                  as="textarea" 
-                  rows={2} 
-                  name="description" 
-                  value={formData.description} 
-                  onChange={handleInputChange} 
-                  placeholder="Detalles adicionales del producto..."
-                />
-              </Form.Group>
+          
+          {showConfirmation ? (
+            <div className="confirmation-summary">
+              <Alert variant="info" className="mb-4">
+                <h5 className="alert-heading mb-0">Revisa los detalles antes de guardar</h5>
+              </Alert>
               <Row>
-                <Col>
-                  <Form.Group className="mb-3">
-                    <Form.Label>P. Compra</Form.Label>
-                    <Form.Control type="number" name="price_buy" value={formData.price_buy} onChange={handleInputChange} step="0.01" />
-                  </Form.Group>
+                <Col md={4} className="text-center mb-3">
+                  <div className="border rounded bg-light d-flex align-items-center justify-content-center" style={{ height: '180px', overflow: 'hidden' }}>
+                    {preview ? (
+                      <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                    ) : (
+                      <span className="text-muted">Sin Imagen</span>
+                    )}
+                  </div>
                 </Col>
-                <Col>
-                  <Form.Group className="mb-3">
-                    <Form.Label>P. Venta</Form.Label>
-                    <Form.Control 
-                      type="number" 
-                      name="price_sell" 
-                      value={formData.price_sell}
-                      onChange={handleInputChange} 
-                      step="0.01" 
-                      required 
-                      placeholder={formData.price_buy ? (parseFloat(formData.price_buy) * 1.20).toFixed(2) : '0.00'}
-                    />
-                    <Form.Text className="text-muted">
-                      {formData.price_buy && `Sugerencia (+20%): $${(parseFloat(formData.price_buy) * 1.20).toFixed(2)}`}
-                    </Form.Text>
-                  </Form.Group>
+                <Col md={8}>
+                  <table className="table table-sm table-bordered">
+                    <tbody>
+                      <tr>
+                        <th className="bg-light" style={{ width: '150px' }}>SKU</th>
+                        <td>{formData.sku}</td>
+                      </tr>
+                      <tr>
+                        <th className="bg-light">Nombre</th>
+                        <td>{formData.name}</td>
+                      </tr>
+                      <tr>
+                        <th className="bg-light">Categoría</th>
+                        <td>{categories.find(c => c.id == formData.category_id)?.name || 'Sin Categoría'}</td>
+                      </tr>
+                      <tr>
+                        <th className="bg-light">P. Compra</th>
+                        <td>${formData.price_buy || '0.00'}</td>
+                      </tr>
+                      <tr>
+                        <th className="bg-light">P. Venta</th>
+                        <td className="fw-bold text-primary">${formData.price_sell}</td>
+                      </tr>
+                      <tr>
+                        <th className="bg-light">{editProduct ? 'Stock Actual' : 'Stock Inicial'}</th>
+                        <td>{formData.stock} {formData.sell_by_weight ? 'Kg' : 'u.'}</td>
+                      </tr>
+                      {formData.is_offer && (
+                        <tr>
+                          <th className="bg-light text-danger">OFERTA ACTIVA</th>
+                          <td>
+                            {formData.promo_type === 'price' && <span>Solo Precio: ${formData.price_offer}</span>}
+                            {formData.promo_type === 'quantity' && <span>Promo: {formData.promo_buy}×{formData.promo_pay}</span>}
+                            {formData.promo_type === 'both' && <span>${formData.price_offer} + {formData.promo_buy}×{formData.promo_pay}</span>}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </Col>
               </Row>
-              <Form.Group className="mb-3">
-                <Form.Label>{editProduct ? 'Stock Actual' : 'Stock Inicial'}</Form.Label>
-                <Form.Control type="number" name="stock" value={formData.stock} onChange={handleInputChange} step="0.001" required />
-              </Form.Group>
-
-              <Form.Group className="mb-3">
-                <Form.Check 
-                  type="switch"
-                  id="sell-by-weight-switch"
-                  label="Se vende por peso (Kg, gramos, etc.)"
-                  name="sell_by_weight"
-                  checked={formData.sell_by_weight}
-                  onChange={handleInputChange}
-                  className="fw-bold text-primary"
-                />
-                <Form.Text className="text-muted">
-                  Habilitar esto para que el sistema solicite el peso al vender este producto.
-                </Form.Text>
-              </Form.Group>
-
-              <hr />
-              <h5 className="mb-3 text-danger">🎁 Configuración de Oferta</h5>
-              
-              <Form.Group className="mb-3">
-                <Form.Check 
-                  type="switch"
-                  id="is-offer-switch"
-                  label="ACTIVAR OFERTA"
-                  name="is_offer"
-                  checked={formData.is_offer}
-                  onChange={handleInputChange}
-                  className="fw-bold text-danger"
-                />
-              </Form.Group>
-
-              {formData.is_offer && (
-                <>
-                  <Form.Group className="mb-3">
-                    <Form.Label className="fw-bold">Tipo de Oferta</Form.Label>
-                    <Form.Select 
-                      value={formData.promo_type}
-                      onChange={(e) => setFormData({...formData, promo_type: e.target.value})}
-                    >
-                      <option value="none">Sin oferta</option>
-                      <option value="price">Solo Precio Oferta</option>
-                      <option value="quantity">Solo Promoción XxY</option>
-                      <option value="both">Ambas (Precio + XxY)</option>
-                    </Form.Select>
-                    <Form.Text className="text-muted">
-                      Selecciona qué tipo de oferta aplicar a este producto
-                    </Form.Text>
-                  </Form.Group>
-
-                  {(formData.promo_type === 'price' || formData.promo_type === 'both') && (
-                    <Form.Group className="mb-3">
-                      <Form.Label>Precio de Oferta ($)</Form.Label>
-                      <Form.Control 
-                        type="number" 
-                        name="price_offer" 
-                        value={formData.price_offer} 
-                        onChange={handleInputChange} 
-                        step="0.01"
-                        placeholder="Ej: 1000"
-                      />
-                      <Form.Text className="text-muted">
-                        Precio con descuento
-                      </Form.Text>
-                    </Form.Group>
-                  )}
-
-                  {(formData.promo_type === 'quantity' || formData.promo_type === 'both') && (
-                    <Form.Group className="mb-3">
-                      <Form.Label className="fw-bold">Promoción XxY (Lleva X, Paga Y)</Form.Label>
-                      <div className="d-flex gap-2 align-items-center">
-                        <div style={{ width: '100px' }}>
-                          <Form.Label className="small mb-1">Lleva</Form.Label>
-                          <Form.Control
-                            type="number"
-                            name="promo_buy"
-                            value={formData.promo_buy}
-                            onChange={handleInputChange}
-                            placeholder="2"
-                          />
-                        </div>
-                        <span className="mt-4">×</span>
-                        <div style={{ width: '100px' }}>
-                          <Form.Label className="small mb-1">Paga</Form.Label>
-                          <Form.Control
-                            type="number"
-                            name="promo_pay"
-                            value={formData.promo_pay}
-                            onChange={handleInputChange}
-                            placeholder="1"
-                          />
-                        </div>
-                        {formData.promo_buy && formData.promo_pay && (
-                          <Badge bg="danger" className="ms-2 mt-4">
-                            🔥 {formData.promo_buy}×{formData.promo_pay}
-                          </Badge>
-                        )}
-                      </div>
-                      <Form.Text className="text-muted">
-                        Ejemplo: 2×1 (Lleva 2, Paga 1), 3×2 (Lleva 3, Paga 2)
-                      </Form.Text>
-                    </Form.Group>
-                  )}
-
-                  {formData.promo_type !== 'none' && formData.price_sell && (
-                    <Alert variant="info" className="small">
-                      <strong>💡 Vista Previa:</strong><br/>
-                      {formData.promo_type === 'price' && formData.price_offer && (
-                        <span>Precio: ${formData.price_sell} → ${formData.price_offer}</span>
-                      )}
-                      {formData.promo_type === 'quantity' && formData.promo_buy && formData.promo_pay && (
-                        <span>Promo: {formData.promo_buy}×{formData.promo_pay} sobre ${formData.price_sell}</span>
-                      )}
-                      {formData.promo_type === 'both' && formData.price_offer && formData.promo_buy && formData.promo_pay && (
-                        <>
-                          Precio: ${formData.price_sell} → ${formData.price_offer}<br/>
-                          Promo: {formData.promo_buy}×{formData.promo_pay} sobre precio oferta
-                        </>
-                      )}
+            </div>
+          ) : (
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-bold">1. SKU / Código de Barras</Form.Label>
+                  <InputGroup hasValidation>
+                    <Form.Control 
+                      name="sku" 
+                      value={formData.sku} 
+                      onChange={handleInputChange} 
+                      ref={skuRef}
+                      required 
+                      isInvalid={!!skuMatch}
+                      placeholder="Escanee o escriba el código..."
+                      autoFocus={!editProduct}
+                    />
+                    <Button variant="outline-secondary" onClick={() => setShowScanner(true)}>
+                      <Camera size={18} />
+                    </Button>
+                    <Form.Control.Feedback type="invalid">
+                      {skuMatch && `Ya existe: ${skuMatch.name}`}
+                    </Form.Control.Feedback>
+                  </InputGroup>
+                  {skuMatch && (
+                    <Alert variant="warning" className="pt-1 pb-1 mt-1 mb-0 small border-0 bg-transparent text-danger p-0 fw-bold">
+                      ⚠️ Este código ya pertenece a "{skuMatch.name}"
                     </Alert>
                   )}
-                </>
-              )}
-            </Col>
-            <Col md={6}>
-              <div className="text-center">
-                <Form.Label>Imagen del Producto</Form.Label>
-                <div className="border rounded mb-3 d-flex align-items-center justify-content-center bg-light" style={{ height: '200px', overflow: 'hidden' }}>
-                  {preview ? (
-                    <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                  ) : (
-                    <span className="text-muted">Sin Imagen</span>
-                  )}
-                </div>
-                {!showCamera ? (
-                  <div className="d-grid gap-2 d-md-block">
-                    <Button variant="outline-primary" className="me-2" onClick={() => document.getElementById('fileInput').click()}>
-                      <Upload size={18} /> Subir
-                    </Button>
-                    <Button variant="outline-secondary" onClick={startCamera}>
-                      <Camera size={18} /> Cámara
-                    </Button>
-                    <input id="fileInput" type="file" hidden onChange={handleFileChange} accept="image/*" />
-                  </div>
-                ) : (
-                  <div>
-                    <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: 'auto', borderRadius: '8px' }}></video>
-                    <div className="mt-2">
-                      <Button variant="success" onClick={takePhoto} className="me-2">Capturar</Button>
-                      <Button variant="danger" onClick={stopCamera}>Cancelar</Button>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-bold">2. Nombre del Producto</Form.Label>
+                  <Form.Control 
+                    name="name" 
+                    value={formData.name} 
+                    onChange={handleInputChange} 
+                    onKeyDown={handleKeyDown}
+                    ref={nameRef} 
+                    required 
+                    placeholder="Ej: Jugo Clight Limonada"
+                  />
+                  {nameMatches.length > 0 && (
+                    <div className="position-relative">
+                      <ListGroup className="position-absolute w-100 shadow-sm z-index-1000 mt-1" style={{ zIndex: 1050 }}>
+                        {nameMatches.map((m, idx) => (
+                          <ListGroup.Item 
+                            key={m.id} 
+                            action 
+                            active={idx === selectedIndex}
+                            onClick={() => selectSimilarProduct(m)}
+                            className="d-flex justify-content-between align-items-center py-2"
+                          >
+                            <div>
+                              <div className="fw-bold small">{m.name}</div>
+                              <small className={idx === selectedIndex ? "text-white" : "text-muted"}>Precio: ${m.price_sell}</small>
+                            </div>
+                            <Badge bg={idx === selectedIndex ? "light" : "info"} text={idx === selectedIndex ? "dark" : "white"} pill className="small">Usar Base</Badge>
+                          </ListGroup.Item>
+                        ))}
+                      </ListGroup>
                     </div>
+                  )}
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <Form.Label className="mb-0 fw-bold">3. Categoría</Form.Label>
+                    <Button 
+                      variant="link" 
+                      size="sm" 
+                      className="p-0 text-decoration-none" 
+                      onClick={() => setShowCatManager(!showCatManager)}
+                    >
+                      {showCatManager ? 'Cerrar Gestor' : 'Gestionar Categorías'}
+                    </Button>
                   </div>
+                  {showCatManager ? (
+                    <div className="bg-light p-2 rounded border mb-2">
+                      <InputGroup size="sm" className="mb-2">
+                        <Form.Control 
+                          placeholder="Nueva categoría..." 
+                          value={newCatName}
+                          onChange={(e) => setNewCatName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCategory())}
+                        />
+                        <Button variant="success" onClick={handleAddCategory}>
+                          <Plus size={16} />
+                        </Button>
+                      </InputGroup>
+                      <div className="d-flex flex-wrap gap-1" style={{ maxHeight: '100px', overflowY: 'auto' }}>
+                        {categories.map(cat => (
+                          <Badge 
+                            key={cat.id} 
+                            bg="secondary" 
+                            className="d-flex align-items-center gap-1"
+                            style={{ cursor: 'default' }}
+                          >
+                            {cat.name}
+                            <X 
+                              size={12} 
+                              style={{ cursor: 'pointer' }} 
+                              onClick={() => handleDeleteCategory(cat.id)}
+                            />
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <Form.Select name="category_id" value={formData.category_id} onChange={handleInputChange}>
+                      <option value="">Sin Categoría</option>
+                      {categories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </Form.Select>
+                  )}
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Descripción</Form.Label>
+                  <Form.Control 
+                    as="textarea" 
+                    rows={2} 
+                    name="description" 
+                    value={formData.description} 
+                    onChange={handleInputChange} 
+                    placeholder="Detalles adicionales del producto..."
+                  />
+                </Form.Group>
+                <Row>
+                  <Col>
+                    <Form.Group className="mb-3">
+                      <Form.Label>P. Compra</Form.Label>
+                      <Form.Control type="number" name="price_buy" value={formData.price_buy} onChange={handleInputChange} step="0.01" />
+                    </Form.Group>
+                  </Col>
+                  <Col>
+                    <Form.Group className="mb-3">
+                      <Form.Label>P. Venta</Form.Label>
+                      <Form.Control 
+                        type="number" 
+                        name="price_sell" 
+                        value={formData.price_sell}
+                        onChange={handleInputChange} 
+                        step="0.01" 
+                        required 
+                        placeholder={formData.price_buy ? (parseFloat(formData.price_buy) * 1.20).toFixed(2) : '0.00'}
+                      />
+                      <Form.Text className="text-muted">
+                        {formData.price_buy && `Sugerencia (+20%): $${(parseFloat(formData.price_buy) * 1.20).toFixed(2)}`}
+                      </Form.Text>
+                    </Form.Group>
+                  </Col>
+                </Row>
+                <Form.Group className="mb-3">
+                  <Form.Label className="fw-bold">{editProduct ? '3. Stock' : '3. Stock Inicial'}</Form.Label>
+                  {editProduct ? (
+                    <div className="d-flex align-items-center gap-3 bg-light p-2 rounded border">
+                      <div className="d-flex flex-column">
+                        <small className="text-muted mb-1">Stock Actual:</small>
+                        <Badge bg={formData.stock > 10 ? 'success' : formData.stock > 0 ? 'warning' : 'danger'} pill className="fs-6 py-2 px-3">
+                          {formData.stock} unidades
+                        </Badge>
+                      </div>
+                      <div className="flex-grow-1">
+                        <small className="text-muted d-block mb-1">Ajustar (+ o -):</small>
+                        <InputGroup size="sm">
+                          <InputGroup.Text className="bg-white border-end-0 text-primary">
+                            <Plus size={16} />
+                          </InputGroup.Text>
+                          <Form.Control 
+                            type="number" 
+                            className="border-start-0"
+                            placeholder="Ej: 5 o -2"
+                            value={stockAdjustment}
+                            onChange={(e) => setStockAdjustment(e.target.value)}
+                            onKeyDown={handleStockAdjustment}
+                          />
+                        </InputGroup>
+                        <Form.Text className="x-small text-muted">Presiona Enter para aplicar</Form.Text>
+                      </div>
+                    </div>
+                  ) : (
+                    <Form.Control 
+                      type="number" 
+                      name="stock" 
+                      value={formData.stock} 
+                      onChange={handleInputChange} 
+                      step="0.001" 
+                      required 
+                      placeholder="Cantidad inicial..."
+                    />
+                  )}
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Check 
+                    type="switch"
+                    id="sell-by-weight-switch"
+                    label="Se vende por peso (Kg, gramos, etc.)"
+                    name="sell_by_weight"
+                    checked={formData.sell_by_weight}
+                    onChange={handleInputChange}
+                    className="fw-bold text-primary"
+                  />
+                  <Form.Text className="text-muted">
+                    Habilitar esto para que el sistema solicite el peso al vender este producto.
+                  </Form.Text>
+                </Form.Group>
+
+                <hr />
+                <h5 className="mb-3 text-danger">🎁 Configuración de Oferta</h5>
+                
+                <Form.Group className="mb-3">
+                  <Form.Check 
+                    type="switch"
+                    id="is-offer-switch"
+                    label="ACTIVAR OFERTA"
+                    name="is_offer"
+                    checked={formData.is_offer}
+                    onChange={handleInputChange}
+                    className="fw-bold text-danger"
+                  />
+                </Form.Group>
+
+                {formData.is_offer && (
+                  <>
+                    <Form.Group className="mb-3">
+                      <Form.Label className="fw-bold">Tipo de Oferta</Form.Label>
+                      <Form.Select 
+                        value={formData.promo_type}
+                        onChange={(e) => setFormData({...formData, promo_type: e.target.value})}
+                      >
+                        <option value="none">Sin oferta</option>
+                        <option value="price">Solo Precio Oferta</option>
+                        <option value="quantity">Solo Promoción XxY</option>
+                        <option value="both">Ambas (Precio + XxY)</option>
+                      </Form.Select>
+                      <Form.Text className="text-muted">
+                        Selecciona qué tipo de oferta aplicar a este producto
+                      </Form.Text>
+                    </Form.Group>
+
+                    {(formData.promo_type === 'price' || formData.promo_type === 'both') && (
+                      <Form.Group className="mb-3">
+                        <Form.Label>Precio de Oferta ($)</Form.Label>
+                        <Form.Control 
+                          type="number" 
+                          name="price_offer" 
+                          value={formData.price_offer} 
+                          onChange={handleInputChange} 
+                          step="0.01"
+                          placeholder="Ej: 1000"
+                        />
+                        <Form.Text className="text-muted">
+                          Precio con descuento
+                        </Form.Text>
+                      </Form.Group>
+                    )}
+
+                    {(formData.promo_type === 'quantity' || formData.promo_type === 'both') && (
+                      <Form.Group className="mb-3">
+                        <Form.Label className="fw-bold">Promoción XxY (Lleva X, Paga Y)</Form.Label>
+                        <div className="d-flex gap-2 align-items-center">
+                          <div style={{ width: '100px' }}>
+                            <Form.Label className="small mb-1">Lleva</Form.Label>
+                            <Form.Control
+                              type="number"
+                              name="promo_buy"
+                              value={formData.promo_buy}
+                              onChange={handleInputChange}
+                              placeholder="2"
+                            />
+                          </div>
+                          <span className="mt-4">×</span>
+                          <div style={{ width: '100px' }}>
+                            <Form.Label className="small mb-1">Paga</Form.Label>
+                            <Form.Control
+                              type="number"
+                              name="promo_pay"
+                              value={formData.promo_pay}
+                              onChange={handleInputChange}
+                              placeholder="1"
+                            />
+                          </div>
+                          {formData.promo_buy && formData.promo_pay && (
+                            <Badge bg="danger" className="ms-2 mt-4">
+                              🔥 {formData.promo_buy}×{formData.promo_pay}
+                            </Badge>
+                          )}
+                        </div>
+                        <Form.Text className="text-muted">
+                          Ejemplo: 2×1 (Lleva 2, Paga 1), 3×2 (Lleva 3, Paga 2)
+                        </Form.Text>
+                      </Form.Group>
+                    )}
+
+                    {formData.promo_type !== 'none' && formData.price_sell && (
+                      <Alert variant="info" className="small">
+                        <strong>💡 Vista Previa:</strong><br/>
+                        {formData.promo_type === 'price' && formData.price_offer && (
+                          <span>Precio: ${formData.price_sell} → ${formData.price_offer}</span>
+                        )}
+                        {formData.promo_type === 'quantity' && formData.promo_buy && formData.promo_pay && (
+                          <span>Promo: {formData.promo_buy}×{formData.promo_pay} sobre ${formData.price_sell}</span>
+                        )}
+                        {formData.promo_type === 'both' && formData.price_offer && formData.promo_buy && formData.promo_pay && (
+                          <>
+                            Precio: ${formData.price_sell} → ${formData.price_offer}<br/>
+                            Promo: {formData.promo_buy}×{formData.promo_pay} sobre precio oferta
+                          </>
+                        )}
+                      </Alert>
+                    )}
+                  </>
                 )}
-                <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
-              </div>
-            </Col>
-          </Row>
+              </Col>
+              <Col md={6}>
+                <div className="text-center">
+                  <Form.Label>Imagen del Producto</Form.Label>
+                  <div className="border rounded mb-3 d-flex align-items-center justify-content-center bg-light" style={{ height: '200px', overflow: 'hidden' }}>
+                    {preview ? (
+                      <img src={preview} alt="Preview" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                    ) : (
+                      <span className="text-muted">Sin Imagen</span>
+                    )}
+                  </div>
+                  {!showCamera ? (
+                    <div className="d-grid gap-2 d-md-block">
+                      <Button variant="outline-primary" className="me-2" onClick={() => document.getElementById('fileInput').click()}>
+                        <Upload size={18} /> Subir
+                      </Button>
+                      <Button variant="outline-secondary" onClick={startCamera}>
+                        <Camera size={18} /> Cámara
+                      </Button>
+                      <input id="fileInput" type="file" hidden onChange={handleFileChange} accept="image/*" />
+                    </div>
+                  ) : (
+                    <div>
+                      <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: 'auto', borderRadius: '8px' }}></video>
+                      <div className="mt-2">
+                        <Button variant="success" onClick={takePhoto} className="me-2">Capturar</Button>
+                        <Button variant="danger" onClick={stopCamera}>Cancelar</Button>
+                      </div>
+                    </div>
+                  )}
+                  <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+                </div>
+              </Col>
+            </Row>
+          )}
         </Modal.Body>
         <Modal.Footer className="d-flex justify-content-between">
           <div>
-            {editProduct && (
+            {editProduct && !showConfirmation && (
               <Button 
                 variant="danger" 
                 onClick={() => setShowDeleteConfirm(true)}
@@ -608,8 +749,17 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
             )}
           </div>
           <div>
-            <Button variant="secondary" onClick={handleClose} className="me-2">Cancelar</Button>
-            <Button variant="primary" type="submit">Guardar Producto</Button>
+            {!showConfirmation ? (
+              <>
+                <Button variant="secondary" onClick={handleClose} className="me-2">Cancelar</Button>
+                <Button variant="primary" type="submit">Guardar Producto</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline-secondary" onClick={() => setShowConfirmation(false)} className="me-2">Volver a Editar</Button>
+                <Button variant="success" onClick={handleFinalSubmit}>Confirmar y Guardar</Button>
+              </>
+            )}
           </div>
         </Modal.Footer>
       </Form>

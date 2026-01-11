@@ -2,7 +2,9 @@ const db = require("../db");
 
 exports.getSettings = async (req, res) => {
   try {
-    const settings = await db("settings").select("*");
+    const settings = await db("settings")
+      .where({ business_id: req.user.business_id })
+      .select("*");
     const settingsObj = {};
     settings.forEach((s) => (settingsObj[s.key] = s.value));
     res.json(settingsObj);
@@ -15,12 +17,20 @@ exports.getSettings = async (req, res) => {
 exports.updateSetting = async (req, res) => {
   const { key, value } = req.body;
   try {
-    const existing = await db("settings").where({ key }).first();
+    const existing = await db("settings")
+      .where({ key, business_id: req.user.business_id })
+      .first();
 
     if (existing) {
-      await db("settings").where({ key }).update({ value });
+      await db("settings")
+        .where({ key, business_id: req.user.business_id })
+        .update({ value });
     } else {
-      await db("settings").insert({ key, value });
+      await db("settings").insert({
+        key,
+        value,
+        business_id: req.user.business_id,
+      });
     }
 
     res.json({ message: "Configuración actualizada" });

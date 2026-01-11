@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Card, Form, Button, InputGroup, Alert } from 'react-bootstrap';
 import { Settings as SettingsIcon, Save } from 'lucide-react';
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const Settings = () => {
   const [cashDiscount, setCashDiscount] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem('auto_print') === 'true');
+  const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('print_method') || 'server');
 
   useEffect(() => {
     loadSettings();
@@ -37,6 +39,8 @@ const Settings = () => {
       console.error('Error al guardar:', error);
       toast.error('Error al guardar configuración');
     } finally {
+      localStorage.setItem('auto_print', autoPrint);
+      localStorage.setItem('print_method', printMethod);
       setSaving(false);
     }
   };
@@ -123,6 +127,55 @@ const Settings = () => {
               Cancelar
             </Button>
           </div>
+        </Card.Body>
+      </Card>
+
+      <Card className="shadow-sm mt-4">
+        <Card.Header className="bg-success text-white">
+          <h5 className="mb-0">Impresión (Este Dispositivo)</h5>
+        </Card.Header>
+        <Card.Body>
+          <Alert variant="info" className="mb-4">
+            <strong>🖨️ Nota:</strong> Estas configuraciones solo afectan a este dispositivo/navegador.
+          </Alert>
+
+          <Form.Group className="mb-4">
+            <Form.Check 
+              type="switch"
+              id="auto-print-switch"
+              label="Impresión automática al finalizar venta"
+              checked={autoPrint}
+              onChange={(e) => setAutoPrint(e.target.checked)}
+            />
+          </Form.Group>
+
+          <Form.Group className="mb-4">
+            <Form.Label className="fw-bold">Método de Impresión</Form.Label>
+            <div>
+              <Form.Check
+                inline
+                label="Servidor (Recomendado para PC Servidor)"
+                name="printMethod"
+                type="radio"
+                id="print-server"
+                checked={printMethod === 'server'}
+                onChange={() => setPrintMethod('server')}
+              />
+              <Form.Check
+                inline
+                label="Navegador (Para Celulares o VPS)"
+                name="printMethod"
+                type="radio"
+                id="print-browser"
+                checked={printMethod === 'browser'}
+                onChange={() => setPrintMethod('browser')}
+              />
+            </div>
+            <Form.Text className="text-muted">
+              Use "Servidor" si este dispositivo tiene una impresora térmica conectada al PC donde corre el servidor local.
+              Use "Navegador" en celulares, tablets o si accede al sistema vía remota (VPS).
+            </Form.Text>
+          </Form.Group>
         </Card.Body>
       </Card>
 

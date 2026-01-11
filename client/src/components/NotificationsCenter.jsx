@@ -4,7 +4,7 @@ import { MessageSquare, Bell } from 'lucide-react';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import socket from '../socket';
 
 const NotificationsCenter = ({ onUpdate }) => {

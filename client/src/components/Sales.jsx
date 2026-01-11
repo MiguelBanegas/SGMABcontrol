@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal } from 'react-bootstrap';
-import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer } from 'lucide-react';
+import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer, TrendingUp, TrendingDown } from 'lucide-react';
 import { db, syncCatalog, syncCustomers, updateLocalProducts } from '../db/localDb';
 import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import socket from '../socket';
 import CustomerModal from './CustomerModal';
 import { User, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import SalesTabs from './SalesTabs';
 
 const Sales = () => {
+  const latestSearchTerm = useRef('');
+  const searchTimeoutRef = useRef(null);
+  const searchResultsRef = useRef(null);
   const [cart, setCart] = useState(() => {
     const saved = localStorage.getItem('pending_sale');
     return saved ? JSON.parse(saved) : [];
@@ -35,7 +39,7 @@ const Sales = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [currentWeightProduct, setCurrentWeightProduct] = useState(null);
   const [inputWeight, setInputWeight] = useState('');
-  const [weightUnit, setWeightUnit] = useState('gr'); // 'gr' o 'kg'
+  const [weightUnit, setWeightUnit] = useState('kg'); // 'gr' o 'kg'
   const weightInputRef = useRef(null);
   const [lastAddedProductId, setLastAddedProductId] = useState(null);
   const [syncStatus, setSyncStatus] = useState('synced'); // 'syncing', 'synced', 'error'
@@ -44,8 +48,76 @@ const Sales = () => {
   const [cashDiscountPercent, setCashDiscountPercent] = useState(0);
   const [autoPrint, setAutoPrint] = useState(() => {
     const saved = localStorage.getItem('auto_print');
-    return saved === null ? true : saved === 'true';
+    return saved === null ? false : saved === 'true';
   });
+  const [printMethod, setPrintMethod] = useState(() => {
+    return localStorage.getItem('print_method') || 'server';
+  });
+  const [amountPaid, setAmountPaid] = useState('0');
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [customerBalance, setCustomerBalance] = useState(null);
+  const paymentInputRef = useRef(null);
+  const customersRef = useRef([]);
+  const selectedCustomerRef = useRef(null);
+  const cartRef = useRef([]);
+  const paymentMethodRef = useRef('Efectivo');
+  const amountPaidRef = useRef('0');
+  const [searchMode, setSearchMode] = useState(() => {
+    return localStorage.getItem('search_mode') || 'server';
+  });
+
+  // Estado para ventas múltiples
+  const [salesTabs, setSalesTabs] = useState([{
+    id: 1,
+    cart: [],
+    customer: null,
+    paymentMethod: 'Efectivo',
+    amountPaid: '0'
+  }]);
+  const [activeTabId, setActiveTabId] = useState(1);
+  
+  // Obtener la venta activa actual
+  const activeTab = salesTabs.find(tab => tab.id === activeTabId) || salesTabs[0];
+
+  // Mantener refs sincronizados
+  useEffect(() => {
+    customersRef.current = customers;
+  }, [customers]);
+
+  useEffect(() => {
+    selectedCustomerRef.current = selectedCustomer;
+  }, [selectedCustomer]);
+
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
+
+  useEffect(() => {
+    paymentMethodRef.current = paymentMethod;
+  }, [paymentMethod]);
+
+  useEffect(() => {
+    amountPaidRef.current = amountPaid;
+  }, [amountPaid]);
+
+  // Sincronizar cart con el tab activo
+  useEffect(() => {
+    if (activeTab) {
+      setCart(activeTab.cart || []);
+      setSelectedCustomer(activeTab.customer);
+      setPaymentMethod(activeTab.paymentMethod || 'Efectivo');
+      setAmountPaid(activeTab.amountPaid || '0');
+    }
+  }, [activeTabId]);
+
+  // Actualizar el tab activo cuando cambia el cart
+  useEffect(() => {
+    setSalesTabs(tabs => tabs.map(tab => 
+      tab.id === activeTabId 
+        ? { ...tab, cart, customer: selectedCustomer, paymentMethod, amountPaid }
+        : tab
+    ));
+  }, [cart, selectedCustomer, paymentMethod, amountPaid, activeTabId]);
   
   // Función para calcular precio efectivo según tipo de promoción
   const calculateItemPrice = (item) => {
@@ -278,18 +350,20 @@ const Sales = () => {
     printWindow.document.close();
   };
 
-  // Refs para evitar clausuras obsoletas en el listener global de F10
-  const cartRef = useRef(cart);
-  const selectedCustomerRef = useRef(selectedCustomer);
-  const paymentMethodRef = useRef(paymentMethod);
-  const customersRef = useRef(customers);
+  const handlePrintTicket = (ticketData) => {
+    if (printMethod === 'server') {
+      axios.post('/api/print', { sale: ticketData })
+        .then(() => console.log('Ticket enviado a impresión directa'))
+        .catch(err => {
+          console.error('Error en impresión directa:', err);
+          toast.error('Error al enviar a la impresora del servidor. Intentando manual...');
+          printTicket(ticketData);
+        });
+    } else {
+      printTicket(ticketData);
+    }
+  };
 
-  useEffect(() => {
-    cartRef.current = cart;
-    selectedCustomerRef.current = selectedCustomer;
-    paymentMethodRef.current = paymentMethod;
-    customersRef.current = customers;
-  }, [cart, selectedCustomer, paymentMethod, customers]);
 
   useEffect(() => {
     const handleStatus = () => {
@@ -301,43 +375,45 @@ const Sales = () => {
     window.addEventListener('online', handleStatus);
     window.addEventListener('offline', handleStatus);
     
-    // 1. Cargar datos locales inmediatamente para apertura instantánea
+    // 1. Cargar datos locales inmediatamente para apertura instantánea (Dexie es muy rápido)
     db.customers.toArray().then(localCusts => {
       if (localCusts.length > 0) {
         setCustomers(localCusts);
-        // Seleccionar Consumidor Final si es necesario
-        if (!selectedCustomerRef.current) {
-          const defaultCustomer = localCusts.find(c => c.name.toLowerCase().includes('cons. final'));
-          if (defaultCustomer) setSelectedCustomer(defaultCustomer);
-        }
+        const defaultCustomer = localCusts.find(c => c.name.toLowerCase().includes('cons. final'));
+        if (defaultCustomer) setSelectedCustomer(defaultCustomer);
       }
     });
 
-    // 2. Sincronización en segundo plano con el servidor
-    if (navigator.onLine) {
-      syncOfflineSales();
-      
-      // Catálogo
-      axios.get('/api/products')
-        .then(res => syncCatalog(res.data))
-        .catch(err => console.error('Error al sincronizar catálogo', err));
-      
-      // Clientes
-      const token = localStorage.getItem('token');
-      axios.get('/api/customers', {
-        headers: { Authorization: `Bearer ${token}` }
-      })
-        .then(res => {
-          setCustomers(res.data);
-          syncCustomers(res.data);
-          
-          if (!selectedCustomerRef.current) {
+    // 2. Sincronización en segundo plano DIFERIDA (para no bloquear el inicio)
+    const syncTimeout = setTimeout(() => {
+      if (navigator.onLine) {
+        syncOfflineSales();
+        
+        // Catálogo - Sincronizar solo si es necesario o en segundo plano
+        axios.get('/api/products')
+          .then(res => syncCatalog(res.data))
+          .catch(err => console.error('Error al sincronizar catálogo', err));
+        
+        // Clientes
+        const token = localStorage.getItem('token');
+        axios.get('/api/customers', {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+          .then(res => {
+            setCustomers(res.data);
+            syncCustomers(res.data);
+            
             const defaultCustomer = res.data.find(c => c.name.toLowerCase().includes('cons. final'));
             if (defaultCustomer) setSelectedCustomer(defaultCustomer);
-          }
-        })
-        .catch(err => console.error('Error al sincronizar clientes', err));
-    }
+          })
+          .catch(err => console.error('Error al sincronizar clientes', err));
+      }
+    }, 3000); // Esperar 3 segundos antes de la carga pesada
+
+    // Forzar foco en el input después de un breve momento
+    setTimeout(() => {
+      if (scanInputRef.current) scanInputRef.current.focus();
+    }, 500);
 
     // Escuchar actualizaciones en tiempo real
     socket.on('catalog_updated', (data) => {
@@ -354,7 +430,26 @@ const Sales = () => {
     const handleGlobalKeyDown = (e) => {
       if (e.key === 'F10') {
         e.preventDefault();
-        handleCheckout();
+        
+        // Si no estamos en Cuenta Corriente, el primer paso es el monto de pago
+        const isNotCtaCte = paymentMethodRef.current !== 'Cta Cte';
+        const isPaymentFocused = document.activeElement === paymentInputRef.current;
+        const isCustomerFocused = document.activeElement === customerInputRef.current;
+
+        if (isNotCtaCte && !isPaymentFocused && !isCustomerFocused) {
+          // 1er paso: Ir a Monto a Pagar
+          paymentInputRef.current?.focus();
+          paymentInputRef.current?.select();
+        } else if (isNotCtaCte && isPaymentFocused) {
+          // 2do paso: Ir a Buscar Cliente
+          customerInputRef.current?.focus();
+        } else if (!isCustomerFocused) {
+          // Caso base: Si no está en cliente (y tal vez no es efectivo), ir a cliente
+          customerInputRef.current?.focus();
+        } else {
+          // 3er paso: Ejecutar cobro
+          handleCheckout();
+        }
       }
     };
 
@@ -365,8 +460,22 @@ const Sales = () => {
       window.removeEventListener('offline', handleStatus);
       window.removeEventListener('keydown', handleGlobalKeyDown);
       socket.off('catalog_updated');
+      clearTimeout(syncTimeout);
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedIndex >= 0 && searchResultsRef.current) {
+      const selectedItem = searchResultsRef.current.children[selectedIndex];
+      if (selectedItem) {
+        selectedItem.scrollIntoView({
+          block: 'nearest',
+          behavior: 'smooth'
+        });
+      }
+    }
+  }, [selectedIndex]);
 
   // Cargar configuración de descuento por efectivo
   useEffect(() => {
@@ -462,20 +571,94 @@ const Sales = () => {
     };
   }, [cart, selectedCustomer, paymentMethod]);
 
-  const handleSearch = async (term) => {
+  const handleSearch = (term) => {
     setSearchTerm(term);
-    if (term.length > 1) {
+    latestSearchTerm.current = term;
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (term.length > 2) {
       setIsSearching(true);
-      try {
-        const results = await db.products
-          .filter(p => p.name.toLowerCase().includes(term.toLowerCase()) || p.sku.includes(term))
-          .limit(5)
-          .toArray();
-        setSearchResults(results);
-        setSelectedIndex(results.length > 0 ? 0 : -1);
-      } finally {
-        setIsSearching(false);
-      }
+      searchTimeoutRef.current = setTimeout(async () => {
+        const startTime = performance.now();
+        
+        try {
+          const lowerTerm = term.toLowerCase().trim();
+          
+          // Obtener modo de búsqueda (local o server)
+          const searchMode = localStorage.getItem('search_mode') || 'local';
+          
+          let results = [];
+          
+          if (searchMode === 'server') {
+            // Búsqueda en servidor
+            const token = localStorage.getItem('token');
+            const response = await axios.get(`/api/products/search?q=${encodeURIComponent(term)}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            results = response.data;
+          } else {
+            // Búsqueda local (actual)
+            results = await db.products
+              .filter(p => {
+                const productName = (p.name || '').toLowerCase();
+                const productSku = (p.sku || '').toLowerCase();
+                return productName.includes(lowerTerm) || productSku.includes(lowerTerm);
+              })
+              .limit(100)
+              .toArray();
+
+            // Ordenar resultados locales
+            results = results.sort((a, b) => {
+              const aName = a.name.toLowerCase();
+              const bName = b.name.toLowerCase();
+              const aStarts = aName.startsWith(lowerTerm);
+              const bStarts = bName.startsWith(lowerTerm);
+              if (aStarts && !bStarts) return -1;
+              if (!aStarts && bStarts) return 1;
+              return 0;
+            });
+          }
+
+          if (latestSearchTerm.current !== term) return;
+
+          const endTime = performance.now();
+          const searchTime = (endTime - startTime).toFixed(2);
+          console.log(`🔍 Búsqueda ${searchMode}: ${searchTime}ms - ${results.length} resultados`);
+
+          setSearchResults(results);
+          setSelectedIndex(results.length > 0 ? 0 : -1);
+        } catch (error) {
+          console.error("Error en búsqueda:", error);
+          
+          // Fallback a búsqueda local si falla el servidor
+          if (localStorage.getItem('search_mode') === 'server') {
+            console.log('⚠️ Búsqueda en servidor falló, usando local como fallback');
+            try {
+              const lowerTerm = term.toLowerCase().trim();
+              const results = await db.products
+                .filter(p => {
+                  const productName = (p.name || '').toLowerCase();
+                  const productSku = (p.sku || '').toLowerCase();
+                  return productName.includes(lowerTerm) || productSku.includes(lowerTerm);
+                })
+                .limit(100)
+                .toArray();
+              
+              setSearchResults(results);
+              setSelectedIndex(results.length > 0 ? 0 : -1);
+            } catch (fallbackError) {
+              console.error("Error en fallback:", fallbackError);
+            }
+          }
+        } finally {
+          if (latestSearchTerm.current === term) {
+            setIsSearching(false);
+          }
+        }
+      }, 100); // 100ms de espera antes de buscar
     } else {
       setSearchResults([]);
       setSelectedIndex(-1);
@@ -487,7 +670,7 @@ const Sales = () => {
     if (product.sell_by_weight) {
       setCurrentWeightProduct(product);
       setInputWeight('');
-      setWeightUnit('gr'); // Resetear a gramos por defecto
+      setWeightUnit('kg'); // Resetear a kg por defecto
       setShowWeightModal(true);
       setSearchTerm('');
       setSearchResults([]);
@@ -510,8 +693,10 @@ const Sales = () => {
     setTimeout(() => setLastAddedProductId(null), 2000);
     
     setSearchTerm('');
+    latestSearchTerm.current = '';
     setSearchResults([]);
     setSelectedIndex(-1);
+    setIsSearching(false);
     scanInputRef.current?.focus();
   };
 
@@ -547,7 +732,8 @@ const Sales = () => {
     setShowWeightModal(false);
     setCurrentWeightProduct(null);
     setInputWeight('');
-    setWeightUnit('gr'); // Resetear a gramos
+    setWeightUnit('kg'); // Resetear a kg
+    setIsSearching(false);
     scanInputRef.current?.focus();
   };
 
@@ -555,40 +741,41 @@ const Sales = () => {
     if (e.key === 'Enter') {
       e.preventDefault();
       
-      // Si hay resultados visibles y uno seleccionado, agregar ese
+      const term = searchTerm.trim();
+      if (!term) return;
+
+      // 1. Prioridad: Búsqueda exacta por SKU (ideal para lectores de barra)
+      const exactMatch = await db.products
+        .where('sku')
+        .equalsIgnoreCase(term)
+        .first();
+      
+      if (exactMatch) {
+        addToCart(exactMatch);
+        toast.success(`Producto agregado: ${exactMatch.name}`, { duration: 1500 });
+        return;
+      }
+
+      // 2. Si hay resultados visibles y uno seleccionado, agregar ese
       if (searchResults.length > 0 && selectedIndex >= 0) {
         addToCart(searchResults[selectedIndex]);
         return;
       }
       
-      // Si no hay resultados visibles pero hay un término de búsqueda,
-      // buscar por SKU exacto (para lectores de código de barras)
-      if (searchTerm.trim()) {
-        const exactMatch = await db.products
-          .where('sku')
-          .equals(searchTerm.trim())
-          .first();
-        
-        if (exactMatch) {
-          addToCart(exactMatch);
-          toast.success(`Producto agregado: ${exactMatch.name}`, { duration: 2000 });
-        } else {
-          // Si no hay coincidencia exacta, buscar por nombre o SKU parcial
-          const results = await db.products
-            .filter(p => 
-              p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-              p.sku.includes(searchTerm)
-            )
-            .limit(1)
-            .toArray();
-          
-          if (results.length > 0) {
-            addToCart(results[0]);
-            toast.success(`Producto agregado: ${results[0].name}`, { duration: 2000 });
-          } else {
-            toast.error('Producto no encontrado', { duration: 2000 });
-          }
-        }
+      // 3. Si no hay resultados visibles, buscar por SKU parcial o nombre (1er resultado)
+      const results = await db.products
+        .filter(p => 
+          p.name.toLowerCase().includes(term.toLowerCase()) || 
+          p.sku.includes(term)
+        )
+        .limit(1)
+        .toArray();
+      
+      if (results.length > 0) {
+        addToCart(results[0]);
+        toast.success(`Producto agregado: ${results[0].name}`, { duration: 1500 });
+      } else {
+        toast.error('Producto no encontrado', { duration: 2000 });
       }
     } else if (searchResults.length > 0) {
       if (e.key === 'ArrowDown') {
@@ -603,6 +790,9 @@ const Sales = () => {
 
   const removeFromCart = (productId) => {
     setCart(cart.filter(item => item.id !== productId));
+    setTimeout(() => {
+      scanInputRef.current?.focus();
+    }, 0);
   };
 
   const updateQuantity = (productId, delta) => {
@@ -640,7 +830,7 @@ const Sales = () => {
 
   const handleCustomerSearch = async (term) => {
     setCustomerSearch(term);
-    if (term.length > 0) {
+    if (term.length > 2) {
       const results = await db.customers
         .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
         .limit(5)
@@ -668,10 +858,22 @@ const Sales = () => {
     }
   };
 
-  const selectCustomer = (customer) => {
+  const selectCustomer = async (customer) => {
     setSelectedCustomer(customer);
     setCustomerSearch('');
     setCustomerResults([]);
+    
+    // Fetch balance
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`/api/customer-accounts/${customer.id}/transactions`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCustomerBalance(response.data.balance);
+    } catch (err) {
+      console.error('Error fetching customer balance:', err);
+      setCustomerBalance(null);
+    }
   };
 
   const handleCheckout = async () => {
@@ -683,14 +885,65 @@ const Sales = () => {
 
     if (currentCart.length === 0) return;
 
-    if (currentPaymentMethod === 'Cta Cte' && !currentCustomer) {
-      toast.error('Debe seleccionar un cliente para Cuenta Corriente');
-      customerInputRef.current?.focus();
-      return;
+    // Para Cuenta Corriente, no se requiere monto de pago
+    if (currentPaymentMethod === 'Cta Cte') {
+      if (!currentCustomer) {
+        toast.error('Debe seleccionar un cliente para Cuenta Corriente');
+        customerInputRef.current?.focus();
+        return;
+      }
+      
+      // No se puede usar Cta Cte con "Cons. Final"
+      if (currentCustomer.name.toLowerCase().includes('cons. final') || 
+          currentCustomer.name.toLowerCase().includes('consumidor final')) {
+        toast.error('No se puede usar Cuenta Corriente para Consumidor Final');
+        customerInputRef.current?.focus();
+        return;
+      }
+    }
+
+    const finalTotal = calculateTotal(currentCart) - (currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0);
+    let paid = 0;
+    let difference = 0;
+
+    // Para métodos que NO son Cta Cte, validar el pago
+    if (currentPaymentMethod !== 'Cta Cte') {
+      // Validación: Si el campo de pago está vacío, hacer foco ahí primero
+      const currentAmountPaid = amountPaidRef.current;
+      if (currentAmountPaid === '' || isNaN(parseFloat(currentAmountPaid))) {
+        paymentInputRef.current?.focus();
+        toast.error('Ingrese un monto válido');
+        return;
+      }
+
+      paid = parseFloat(currentAmountPaid);
+      difference = paid - finalTotal;
+
+      // Si hay deuda (falta dinero), validaciones especiales
+      if (difference < 0) {
+        // No se puede tener deuda sin cliente
+        if (!currentCustomer) {
+          toast.error('Debe seleccionar un cliente para registrar una deuda');
+          customerInputRef.current?.focus();
+          return;
+        }
+        
+        // No se puede tener deuda con "Cons. Final"
+        if (currentCustomer.name.toLowerCase().includes('cons. final') || 
+            currentCustomer.name.toLowerCase().includes('consumidor final')) {
+          toast.error('El pago es insuficiente. Seleccione un cliente para registrar la deuda.');
+          customerInputRef.current?.focus();
+          return;
+        }
+      }
+    } else {
+      // Para Cta Cte, el total va completo a deuda
+      paid = 0;
+      difference = -finalTotal;
     }
 
     // Si no hay cliente y no es Cta Cte, avisar una vez si el foco no está en el buscador de clientes
-    if (!currentCustomer && document.activeElement !== customerInputRef.current) {
+    if (!currentCustomer && currentPaymentMethod !== 'Cta Cte' && document.activeElement !== customerInputRef.current) {
       customerInputRef.current?.focus();
       toast('¿Desea agregar un cliente? Presione F10 de nuevo para vender como Anónimo', { icon: '👤', duration: 4000 });
       return;
@@ -713,6 +966,9 @@ const Sales = () => {
       cash_discount: currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0,
       customer_id: currentCustomer?.id || null,
       payment_method: currentPaymentMethod,
+      amount_paid: paid,
+      change_given: difference >= 0 ? difference : 0,
+      debt_amount: difference < 0 ? Math.abs(difference) : 0,
       created_at: new Date().toISOString()
     };
 
@@ -738,6 +994,7 @@ const Sales = () => {
       }
       
       setCart([]);
+      setAmountPaid('0'); // Limpiar campo de pago a 0
       
       // Limpiar venta en progreso del servidor
       try {
@@ -752,6 +1009,9 @@ const Sales = () => {
       // Intentar resetear al cliente Cons. Final por defecto usando el ref más actualizado
       const defaultCustomer = customersRef.current.find(c => c.name.toLowerCase().includes('cons. final'));
       setSelectedCustomer(defaultCustomer || null);
+      setCustomerBalance(null);
+      setCustomerSearch('');
+      setCustomerResults([]);
       
       setPaymentMethod('Efectivo');
       localStorage.removeItem('pending_sale');
@@ -761,12 +1021,7 @@ const Sales = () => {
         scanInputRef.current.focus();
       }
 
-      toast.success('Venta realizada con éxito' + (isOnline ? '' : ' (Modo Offline)'), {
-        duration: 4000,
-        icon: '💰',
-      });
-
-      // Imprimir ticket automáticamente
+      // Preparar datos para el ticket
       const ticketData = {
         ...saleData,
         seller_name: user?.username || 'Vendedor',
@@ -785,14 +1040,40 @@ const Sales = () => {
         })
       };
 
-      // Imprimir ticket automáticamente
+      // Notificación de éxito con opción de impresión manual
+      const successMessage = difference < 0 
+        ? `Venta registrada con deuda de $${Math.abs(difference).toFixed(2)}`
+        : `Venta realizada con éxito`;
+      
+      toast.success((t) => (
+        <span>
+          <b>{successMessage}</b> {isOnline ? '' : '(Offline)'}
+          {difference >= 0 && difference > 0 && (
+            <div className="mt-1 small">
+              Vuelto: <strong>${difference.toFixed(2)}</strong>
+            </div>
+          )}
+          <br />
+          <Button 
+            variant="primary" 
+            size="sm" 
+            className="mt-2 w-100"
+            onClick={() => {
+              handlePrintTicket(ticketData);
+              toast.dismiss(t.id);
+            }}
+          >
+            <Printer size={14} className="me-1" /> Imprimir Ticket
+          </Button>
+        </span>
+      ), {
+        duration: 5000,
+        icon: '💰',
+      });
+
+      // Imprimir automáticamente si está configurado
       if (autoPrint) {
-        axios.post('/api/print', { sale: ticketData })
-          .then(() => console.log('Ticket enviado a impresión directa'))
-          .catch(err => {
-            console.error('Error en impresión directa:', err);
-            toast.error('Error al enviar a la impresora');
-          });
+        handlePrintTicket(ticketData);
       }
     } catch (err) {
       console.error(err);
@@ -822,6 +1103,87 @@ const Sales = () => {
         <Col lg={8}>
           <Card className="border-0 shadow-sm mb-4">
             <Card.Body>
+              {/* Pestañas de ventas múltiples */}
+              <SalesTabs 
+                tabs={salesTabs}
+                activeTabId={activeTabId}
+                onTabChange={(tabId) => setActiveTabId(tabId)}
+                onTabClose={(tabId) => {
+                  if (salesTabs.length === 1) {
+                    toast.error('Debe haber al menos una venta abierta');
+                    return;
+                  }
+                  const tab = salesTabs.find(t => t.id === tabId);
+                  if (tab && tab.cart.length > 0) {
+                    // Usar toast personalizado para confirmación
+                    const confirmClose = () => {
+                      return new Promise((resolve, reject) => {
+                        const toastId = toast((t) => (
+                          <div>
+                            <p className="mb-2">¿Cerrar esta venta? Se perderán {tab.cart.length} productos.</p>
+                            <div className="d-flex gap-2">
+                              <Button 
+                                size="sm" 
+                                variant="danger"
+                                onClick={() => {
+                                  toast.dismiss(toastId);
+                                  resolve(true);
+                                }}
+                              >
+                                Sí, cerrar
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="secondary"
+                                onClick={() => {
+                                  toast.dismiss(toastId);
+                                  reject(false);
+                                }}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          </div>
+                        ), {
+                          duration: Infinity,
+                          position: 'top-center'
+                        });
+                      });
+                    };
+
+                    confirmClose()
+                      .then(() => {
+                        setSalesTabs(salesTabs.filter(t => t.id !== tabId));
+                        if (activeTabId === tabId) {
+                          setActiveTabId(salesTabs[0].id);
+                        }
+                        toast.success('Venta cerrada');
+                      })
+                      .catch(() => {
+                        // Usuario canceló
+                      });
+                  } else {
+                    setSalesTabs(salesTabs.filter(t => t.id !== tabId));
+                    if (activeTabId === tabId) {
+                      setActiveTabId(salesTabs[0].id);
+                    }
+                    toast.success('Venta cerrada');
+                  }
+                }}
+                onNewTab={() => {
+                  const newId = Math.max(...salesTabs.map(t => t.id)) + 1;
+                  setSalesTabs([...salesTabs, {
+                    id: newId,
+                    cart: [],
+                    customer: null,
+                    paymentMethod: 'Efectivo',
+                    amountPaid: '0'
+                  }]);
+                  setActiveTabId(newId);
+                  toast.success('Nueva venta creada');
+                }}
+              />
+              
               <InputGroup size="lg" className="mb-3">
                 <InputGroup.Text className="bg-white border-end-0">
                   <Barcode size={24} className="text-primary" />
@@ -851,7 +1213,17 @@ const Sales = () => {
 
               {/* Resultados de búsqueda */}
               {!isSearching && searchResults.length > 0 && (
-                <ListGroup className="position-absolute w-100 shadow-lg" style={{ zIndex: 1000, marginTop: '-15px' }}>
+                <ListGroup 
+                  ref={searchResultsRef}
+                  className="position-absolute w-100 shadow-lg custom-scrollbar" 
+                  style={{ 
+                    zIndex: 1000, 
+                    marginTop: '-15px', 
+                    maxHeight: '400px', 
+                    overflowY: 'auto',
+                    borderRadius: '0 0 8px 8px'
+                  }}
+                >
                   {searchResults.map((p, idx) => (
                     <ListGroup.Item 
                       key={p.id} 
@@ -860,7 +1232,7 @@ const Sales = () => {
                       className={`d-flex align-items-center justify-content-between p-3 ${selectedIndex === idx ? 'bg-primary text-white shadow' : ''}`}
                     >
                       <div className="d-flex align-items-center">
-                        <div className="bg-light rounded me-3 d-flex align-items-center justify-content-center" style={{ width: '40px', height: '40px' }}>
+                        <div className="bg-light rounded me-3 d-flex align-items-center justify-content-center" style={{ width: '80px', height: '80px' }}>
                           {p.image_url ? <img src={`${p.image_url}`} style={{ width: '100%' }} /> : <Search size={20} />}
                         </div>
                         <div>
@@ -933,7 +1305,7 @@ const Sales = () => {
                           <div className="d-flex align-items-center gap-2">
                             <div 
                               className="bg-light rounded flex-shrink-0 d-flex align-items-center justify-content-center overflow-hidden" 
-                              style={{ width: '32px', height: '32px', border: '1px solid #eee' }}
+                              style={{ width: '64px', height: '64px', border: '1px solid #eee' }}
                             >
                               {item.image_url ? (
                                 <img 
@@ -1111,6 +1483,71 @@ const Sales = () => {
               </span>
             </div>
             
+            {/* Campo de Pago */}
+            <div className="mb-3">
+              <Form.Label className="small opacity-75">¿Con cuánto paga?</Form.Label>
+              <InputGroup>
+                <InputGroup.Text className="bg-dark border-secondary text-white">$</InputGroup.Text>
+                <Form.Control
+                  ref={paymentInputRef}
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  className="bg-dark border-secondary text-white"
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  disabled={cart.length === 0}
+                />
+              </InputGroup>
+              {amountPaid && parseFloat(amountPaid) > 0 && (() => {
+                const finalTotal = total - (paymentMethod === 'Efectivo' ? total * (cashDiscountPercent / 100) : 0);
+                const paid = parseFloat(amountPaid);
+                const difference = paid - finalTotal;
+                
+                if (difference >= 0) {
+                  return (
+                    <div className="mt-2 p-2 bg-success bg-opacity-25 border border-success rounded">
+                      <div className="d-flex justify-content-between">
+                        <span className="text-success fw-bold">Vuelto:</span>
+                        <span className="text-success fw-bold">${difference.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  const absoluteDiff = Math.abs(difference);
+                  const creditAvailable = customerBalance < 0 ? Math.abs(customerBalance) : 0;
+                  const creditApplied = Math.min(absoluteDiff, creditAvailable);
+                  const remainingToPay = absoluteDiff - creditApplied;
+
+                  return (
+                    <div className="mt-2 p-2 bg-danger bg-opacity-25 border border-danger rounded">
+                      <div className="d-flex justify-content-between">
+                        <span className="text-danger fw-bold">Falta:</span>
+                        <span className="text-danger fw-bold">${absoluteDiff.toFixed(2)}</span>
+                      </div>
+                      {creditApplied > 0 && (
+                        <div className="d-flex justify-content-between x-small text-success mt-1">
+                          <span>Usa tu crédito:</span>
+                          <span className="fw-bold">-${creditApplied.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {creditApplied > 0 && remainingToPay > 0 && (
+                        <div className="d-flex justify-content-between x-small text-danger border-top border-danger border-opacity-25 mt-1 pt-1">
+                          <span>Queda a deber:</span>
+                          <span className="fw-bold">${remainingToPay.toFixed(2)}</span>
+                        </div>
+                      )}
+                      {!selectedCustomer && (
+                        <div className="text-warning small mt-1">
+                          ⚠️ Debe seleccionar un cliente para registrar deuda
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+            
             <div className="text-center bg-primary bg-opacity-10 rounded py-2 border border-primary border-opacity-25 mb-4">
                <span className="text-primary small fw-bold">CANTIDAD DE PRODUCTOS: </span>
                <span className="h4 mb-0 text-primary fw-bold">{totalItemsCount}</span>
@@ -1118,14 +1555,52 @@ const Sales = () => {
 
             {/* Selector de Cliente */}
             <div className="mb-4">
-              <Form.Label className="small opacity-75">Cliente</Form.Label>
+              <Form.Label 
+                className="small opacity-75" 
+                style={{ cursor: 'pointer' }}
+                onClick={() => customerInputRef.current?.focus()}
+              >
+                Cliente
+              </Form.Label>
               {selectedCustomer ? (
-                <div className="d-flex align-items-center justify-content-between bg-dark bg-opacity-50 p-2 rounded border border-secondary">
-                  <div className="d-flex align-items-center">
-                    <User size={18} className="me-2 text-info" />
-                    <span>{selectedCustomer.name}</span>
+                <div className="bg-dark bg-opacity-50 p-2 rounded border border-secondary shadow-sm">
+                  <div className="d-flex align-items-center justify-content-between mb-1">
+                    <div className="d-flex align-items-center">
+                      <User size={18} className="me-2 text-info" />
+                      <span className="fw-bold">{selectedCustomer.name}</span>
+                    </div>
+                    <Button 
+                      variant="link" 
+                      size="sm" 
+                      className="text-danger p-0 text-decoration-none" 
+                      onClick={() => {
+                        setSelectedCustomer(null);
+                        setCustomerBalance(null);
+                        setTimeout(() => customerInputRef.current?.focus(), 0);
+                      }}
+                    >
+                      Cambiar
+                    </Button>
                   </div>
-                  <Button variant="link" size="sm" className="text-danger p-0" onClick={() => setSelectedCustomer(null)}>Cambiar</Button>
+                  {customerBalance !== null && (
+                    <div className="d-flex align-items-center gap-2 mt-1">
+                      {customerBalance < 0 ? (
+                        <Badge bg="success" className="d-flex align-items-center py-1 px-2 border border-success border-opacity-50">
+                          <TrendingDown size={12} className="me-1" />
+                          Saldo a favor: ${Math.abs(customerBalance).toFixed(2)}
+                        </Badge>
+                      ) : customerBalance > 0 ? (
+                        <Badge bg="danger" className="d-flex align-items-center py-1 px-2 border border-danger border-opacity-50">
+                          <TrendingUp size={12} className="me-1" />
+                          Deuda previa: ${customerBalance.toFixed(2)}
+                        </Badge>
+                      ) : (
+                        <Badge bg="secondary" className="py-1 px-2 opacity-75">
+                          Sin deudas pendientes
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="position-relative">

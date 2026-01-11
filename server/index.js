@@ -1,4 +1,10 @@
 require("dotenv").config();
+const os = require("os");
+
+console.log(
+  ">>> SISTEMA INICIADO: Versión 1.5.0 - Puerto:",
+  process.env.PORT || 5051
+);
 const express = require("express");
 const cors = require("cors");
 const authRoutes = require("./routes/authRoutes");
@@ -6,10 +12,28 @@ const productRoutes = require("./routes/productRoutes");
 const saleRoutes = require("./routes/saleRoutes");
 const userRoutes = require("./routes/userRoutes");
 const customerRoutes = require("./routes/customerRoutes");
+const customerAccountRoutes = require("./routes/customerAccounts");
 const notificationRoutes = require("./routes/notificationRoutes");
 const printRoutes = require("./routes/printRoutes");
 const { startSpooler } = require("./services/printService");
 const path = require("path");
+
+// Detectar la IP local para que Bonjour publique en la interfaz correcta (evitar WSL)
+const getLocalIp = () => {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === "IPv4" && !iface.internal) {
+        if (iface.address.startsWith("192.168.")) return iface.address;
+      }
+    }
+  }
+  return undefined;
+};
+
+
+const bonjour = require("bonjour")();
+
 
 const app = express();
 const http = require("http");
@@ -22,7 +46,7 @@ const io = new Server(server, {
   },
 });
 
-const WEB_VERSION = "1.3.1";
+const WEB_VERSION = "1.5.1";
 const MOBILE_VERSION = "1.0.1";
 
 app.set("io", io);
@@ -47,6 +71,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/sales", saleRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/customers", customerRoutes);
+app.use("/api/customer-accounts", customerAccountRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/print", printRoutes);
@@ -54,9 +79,10 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });
 
-// Servir Frontend en Producción
-if (process.env.NODE_ENV === "production") {
-  const clientDistPath = path.join(__dirname, "../client/dist");
+// Servir Frontend (Busca la carpeta dist)
+const clientDistPath = path.join(__dirname, "../client/dist");
+if (fs.existsSync(clientDistPath)) {
+  console.log("Serviendo frontend desde:", clientDistPath);
   app.use(express.static(clientDistPath));
 
   app.get(/.*/, (req, res, next) => {
@@ -85,7 +111,21 @@ setInterval(() => {
   io.emit("version_check", { web: WEB_VERSION, mobile: MOBILE_VERSION });
 }, 30000);
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on http://0.0.0.0:${PORT}`);
   startSpooler();
+
+  // Publicar el servidor en la red local vía mDNS (Bonjour)
+  try {
+    bonjour.publish({
+      name: "servidor-node",
+      type: "http",
+      port: PORT,
+    });
+    console.log(
+      `Servicio Servidor-Node publicado vía Bonjour en puerto ${PORT}`
+    );
+  } catch (error) {
+    console.error("Error al publicar servicio Bonjour:", error);
+  }
 });

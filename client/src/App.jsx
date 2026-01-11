@@ -1,18 +1,19 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { ShoppingCart, Package, Users, LogOut, Receipt, Settings as SettingsIcon } from 'lucide-react';
+import { ShoppingCart, Package, Users, LogOut, Receipt, Settings as SettingsIcon, CreditCard } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Stock from './components/Stock';
 import Sales from './components/Sales';
 import MySales from './components/MySales';
 import Admin from './components/Admin';
+import CustomerAccount from './components/CustomerAccount';
 import Settings from './components/Settings';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
 
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.5.1';
 
 const Home = () => <div className="mt-4"><h2>Bienvenido al SGM</h2><p>Seleccione una opción del menú para comenzar.</p></div>;
 
@@ -46,7 +47,18 @@ function AppContent() {
           variant="primary" 
           size="lg" 
           className="rounded-pill px-5 shadow-lg"
-          onClick={() => window.location.reload()}
+          onClick={() => {
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(registrations => {
+                for (let registration of registrations) {
+                  registration.update();
+                }
+                window.location.reload(true);
+              });
+            } else {
+              window.location.reload(true);
+            }
+          }}
         >
           Actualizar Ahora
         </Button>
@@ -63,7 +75,7 @@ function AppContent() {
 
   return (
     <Router>
-      <Navbar bg="dark" variant="dark" expand="lg" className="shadow-sm">
+      <Navbar bg="dark" variant="dark" expand="lg" className="shadow-sm" collapseOnSelect>
         <Container>
           <Navbar.Brand as={Link} to="/">
             SGM Comercio <span style={{ fontSize: '0.6em', opacity: 0.6 }}>v{APP_VERSION}</span>
@@ -79,6 +91,9 @@ function AppContent() {
               </Nav.Link>
               <Nav.Link as={Link} to="/stock" className="px-3">
                 <Package className="me-1" size={18} /> Stock
+              </Nav.Link>
+              <Nav.Link as={Link} to="/customer-accounts" className="px-3">
+                <CreditCard className="me-1" size={18} /> Cuenta Corriente
               </Nav.Link>
               {user.role === 'admin' && (
                 <>
@@ -110,6 +125,7 @@ function AppContent() {
           <Route path="/ventas" element={<Sales />} />
           <Route path="/mis-ventas" element={<MySales />} />
           <Route path="/stock" element={<Stock />} />
+          <Route path="/customer-accounts" element={<CustomerAccount />} />
           <Route path="/admin" element={
             user.role === 'admin' ? <Admin /> : <Navigate to="/" replace />
           } />

@@ -1,58 +1,131 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
 :root {
-  --primary-color: #2563eb;
-  --bg-color: #f8fafc;
+  --primary: #2563eb;
+  --primary-glow: rgba(37, 99, 235, 0.4);
+  --secondary: #7c3aed;
+  --accent: #06b6d4;
+  --bg-gradient: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  --premium-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.4);
 }
 
 body {
-  background-color: var(--bg-color);
-  font-family: 'Inter', sans-serif;
+  margin: 0;
+  font-family: 'Outfit', sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--bg-gradient);
+  min-height: 100vh;
+  color: #1e293b;
 }
 
+/* Efecto de fondo dinámico */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 10% 20%, rgba(37, 99, 235, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 90% 80%, rgba(124, 58, 237, 0.05) 0%, transparent 40%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.glass-card {
+  background: var(--glass-bg) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid var(--glass-border) !important;
+  box-shadow: var(--premium-shadow) !important;
+  border-radius: 24px !important;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.premium-btn {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 15px var(--primary-glow) !important;
+  transition: all 0.3s ease !important;
+  color: white !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+}
+
+.premium-btn:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 20px var(--primary-glow) !important;
+  filter: brightness(1.1) !important;
+}
+
+.premium-input {
+  border: 1px solid #e2e8f0 !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  transition: all 0.3s ease !important;
+}
+
+.premium-input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 4px var(--primary-glow) !important;
+  background: #fff !important;
+}
+
+/* Navbar moderno */
 .navbar {
-  backdrop-filter: blur(10px);
-  background-color: rgba(33, 37, 41, 0.95) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(15, 23, 42, 0.9) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.8rem 1rem;
 }
 
-.card {
-  border: none;
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  background: linear-gradient(to right, #60a5fa, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Tablas con estilo */
+.table {
   border-radius: 12px;
+  overflow: hidden;
 }
 
-/* Estilos para placeholders más sutiles */
+.table thead th {
+  background: #1e293b !important;
+  color: white !important;
+  font-weight: 500 !important;
+  text-transform: uppercase !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0.05em !important;
+  padding: 1rem !important;
+  border: none !important;
+}
+
+/* Animaciones suaves */
+.fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 ::placeholder {
-  color: #adb5bd !important;
-  opacity: 0.6 !important;
-  font-style: italic;
-  font-weight: 300;
-  letter-spacing: 0.3px;
-}
-
-/* Para compatibilidad con navegadores antiguos */
-::-webkit-input-placeholder {
-  color: #adb5bd;
+  color: #94a3b8 !important;
   opacity: 0.6;
-  font-style: italic;
-  font-weight: 300;
-}
-
-::-moz-placeholder {
-  color: #adb5bd;
-  opacity: 0.6;
-  font-style: italic;
-  font-weight: 300;
-}
-
-:-ms-input-placeholder {
-  color: #adb5bd;
-  opacity: 0.6;
-  font-style: italic;
-  font-weight: 300;
-}
-
-:-moz-placeholder {
-  color: #adb5bd;
-  opacity: 0.6;
-  font-style: italic;
-  font-weight: 300;
 }

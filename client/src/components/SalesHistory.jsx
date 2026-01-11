@@ -236,7 +236,6 @@ const SalesHistory = () => {
             <th>Vendedor</th>
             <th>Cliente</th>
             <th>Pago</th>
-            <th>Estado</th>
             <th className="text-end">Total</th>
             <th className="text-center">Acciones</th>
           </tr>
@@ -263,11 +262,6 @@ const SalesHistory = () => {
                   {sale.payment_method || 'Efectivo'}
                 </Badge>
               </td>
-              <td>
-                <Badge bg={sale.status === 'pendiente' ? 'warning' : 'success'} text={sale.status === 'pendiente' ? 'dark' : 'white'}>
-                  {sale.status || 'completado'}
-                </Badge>
-              </td>
               <td className="text-end fw-bold text-primary">${Number(sale.total || 0).toFixed(2)}</td>
               <td className="text-center">
                 <Button variant="outline-primary" size="sm" onClick={() => openDetail(sale)}>
@@ -278,7 +272,7 @@ const SalesHistory = () => {
           ))}
           {currentSales.length === 0 && (
             <tr>
-              <td colSpan="7" className="text-center py-5 text-muted">
+              <td colSpan="6" className="text-center py-5 text-muted">
                 <Filter size={48} className="mb-3 opacity-25" />
                 <p>No se encontraron ventas con los filtros seleccionados.</p>
               </td>

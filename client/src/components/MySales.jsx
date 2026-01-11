@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Badge, Collapse, Spinner } from 'react-bootstrap';
 import { Receipt, ChevronDown, ChevronUp, Printer } from 'lucide-react';
 import axios from 'axios';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
 

@@ -20,10 +20,11 @@ const upload = multer({ storage });
 
 const { verifyToken, isAdmin } = require("../middleware/authMiddleware");
 
-router.get("/", productController.getAllProducts);
-router.get("/stats", productController.getProductStats);
-router.get("/top-sellers", productController.getTopSellers);
-router.get("/sku/:sku", productController.getProductBySku);
+router.get("/", verifyToken, productController.getAllProducts);
+router.get("/search", verifyToken, productController.searchProducts);
+router.get("/stats", verifyToken, productController.getProductStats);
+router.get("/top-sellers", verifyToken, productController.getTopSellers);
+router.get("/sku/:sku", verifyToken, productController.getProductBySku);
 
 // Rutas protegidas (Solo Admin)
 router.post(
@@ -40,10 +41,21 @@ router.put(
   upload.single("image"),
   productController.updateProduct
 );
+router.patch("/:id", verifyToken, isAdmin, productController.patchProduct);
 router.delete("/:id", verifyToken, isAdmin, productController.deleteProduct);
 router.post("/:id/adjust-stock", verifyToken, productController.adjustStock); // El ajuste de stock puede ser por vendedor o admin, según decidas. Lo dejo con verifyToken.
-router.get("/categories", productController.getCategories);
-router.post("/categories", productController.createCategory);
-router.delete("/categories/:id", productController.deleteCategory);
+router.get("/categories", verifyToken, productController.getCategories);
+router.post(
+  "/categories",
+  verifyToken,
+  isAdmin,
+  productController.createCategory
+);
+router.delete(
+  "/categories/:id",
+  verifyToken,
+  isAdmin,
+  productController.deleteCategory
+);
 
 module.exports = router;

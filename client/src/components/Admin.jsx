@@ -3,21 +3,27 @@ import { Row, Col, Card, Table, Badge, Tabs, Tab, Button, Modal } from 'react-bo
 import { BarChart3, TrendingUp, Users, Package, UserPlus, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import UserModal from './UserModal';
+import CustomerModal from './CustomerModal';
 import SalesHistory from './SalesHistory';
 import CtaCteManager from './CtaCteManager';
 import NotificationsCenter from './NotificationsCenter';
+import ProductSalesAnalytics from './ProductSalesAnalytics';
 import socket from '../socket';
-import toast from 'react-hot-toast';
+import { toast } from 'react-hot-toast';
 
 const Admin = () => {
   const [stats, setStats] = useState([]);
   const [productStats, setProductStats] = useState({ total: 0, lowStock: 0, lowStockProducts: [] });
   const [users, setUsers] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showLowStockModal, setShowLowStockModal] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
+  const [editingCustomer, setEditingCustomer] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
+  const [deleteType, setDeleteType] = useState('user'); // 'user' o 'customer'
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -57,6 +63,18 @@ const Admin = () => {
     }
   };
 
+  const fetchCustomers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.get('/api/customers?all=true', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCustomers(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchNotificationsCount = async () => {
     try {
       const token = localStorage.getItem('token');
@@ -71,7 +89,13 @@ const Admin = () => {
   };
 
   useEffect(() => {
-    Promise.all([fetchStats(), fetchProductStats(), fetchUsers(), fetchNotificationsCount()]).finally(() => setLoading(false));
+    Promise.all([
+      fetchStats(), 
+      fetchProductStats(), 
+      fetchUsers(), 
+      fetchCustomers(),
+      fetchNotificationsCount()
+    ]).finally(() => setLoading(false));
 
     socket.on('notification_received', fetchNotificationsCount);
     return () => {
@@ -82,13 +106,21 @@ const Admin = () => {
   const confirmDelete = async () => {
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`/api/users/${deleteId}`, {
+      const endpoint = deleteType === 'user' ? `/api/users/${deleteId}` : `/api/customers/${deleteId}`;
+      
+      await axios.delete(endpoint, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      fetchUsers();
-      toast.success('Usuario eliminado correctamente');
+      
+      if (deleteType === 'user') {
+        fetchUsers();
+        toast.success('Usuario eliminado correctamente');
+      } else {
+        fetchCustomers();
+        toast.success('Cliente eliminado correctamente');
+      }
     } catch (err) {
-      toast.error('Error al eliminar usuario');
+      toast.error(err.response?.data?.message || `Error al eliminar ${deleteType === 'user' ? 'usuario' : 'cliente'}`);
     } finally {
       setShowDeleteModal(false);
       setDeleteId(null);
@@ -96,6 +128,13 @@ const Admin = () => {
   };
 
   const handleDeleteUser = (id) => {
+    setDeleteType('user');
+    setDeleteId(id);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteCustomer = (id) => {
+    setDeleteType('customer');
     setDeleteId(id);
     setShowDeleteModal(true);
   };
@@ -245,12 +284,75 @@ const Admin = () => {
             </Card.Body>
           </Card>
         </Tab>
+        <Tab eventKey="customers" title="Clientes">
+          <Card className="border-0 shadow-sm mt-3">
+            <Card.Header className="bg-white py-3 border-0 d-flex justify-content-between align-items-center">
+              <h5 className="mb-0">Gestión de Clientes</h5>
+              <Button variant="primary" size="sm" onClick={() => { setEditingCustomer(null); setShowCustomerModal(true); }}>
+                <UserPlus size={18} className="me-1" /> Nuevo Cliente
+              </Button>
+            </Card.Header>
+            <Card.Body>
+              <Table responsive hover>
+                <thead>
+                  <tr>
+                    <th>Nombre</th>
+                    <th>Contacto</th>
+                    <th>Estado</th>
+                    <th>Notas</th>
+                    <th className="text-end">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {customers.map(c => (
+                    <tr key={c.id}>
+                      <td>
+                        <div className="fw-bold">{c.name}</div>
+                        <small className="text-muted">ID: {c.id}</small>
+                      </td>
+                      <td>
+                        <div className="small">{c.email || 'Sin email'}</div>
+                        <div className="small text-muted">{c.phone || 'Sin teléfono'}</div>
+                      </td>
+                      <td>
+                        <Badge bg={c.is_active ? 'success' : 'danger'}>
+                          {c.is_active ? 'ACTIVO' : 'INACTIVO'}
+                        </Badge>
+                      </td>
+                      <td>
+                        <div className="small text-truncate" style={{ maxWidth: '150px' }} title={c.notes}>
+                          {c.notes || '-'}
+                        </div>
+                      </td>
+                      <td className="text-end">
+                        <Button variant="link" size="sm" className="text-primary p-0 me-3" onClick={() => { setEditingCustomer(c); setShowCustomerModal(true); }}>
+                          <Edit size={18} />
+                        </Button>
+                        <Button variant="link" size="sm" className="text-danger p-0" onClick={() => handleDeleteCustomer(c.id)}>
+                          <Trash2 size={18} />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                  {customers.length === 0 && (
+                    <tr>
+                      <td colSpan="5" className="text-center py-4 text-muted">No hay clientes registrados</td>
+                    </tr>
+                  )}
+                </tbody>
+              </Table>
+            </Card.Body>
+          </Card>
+        </Tab>
         <Tab eventKey="history" title="Historial Comercial">
           <SalesHistory />
         </Tab>
-        <Tab eventKey="ctacte" title="Cuentas Corrientes">
-          <CtaCteManager />
+        <Tab eventKey="product-analytics" title="Análisis por Producto">
+          <ProductSalesAnalytics />
         </Tab>
+        {/* <Tab eventKey="ctacte" title="Cuentas Corrientes">
+          <CtaCteManager />
+        </Tab> */}
         <Tab eventKey="notifications" title={
           <span>
             Notificaciones {unreadCount > 0 && <Badge bg="danger" pill className="ms-1">{unreadCount}</Badge>}
@@ -265,6 +367,13 @@ const Admin = () => {
         handleClose={() => setShowUserModal(false)} 
         refreshUsers={fetchUsers}
         editUser={editingUser}
+      />
+
+      <CustomerModal
+        show={showCustomerModal}
+        handleClose={() => setShowCustomerModal(false)}
+        refreshCustomers={fetchCustomers}
+        editCustomer={editingCustomer}
       />
 
       <Modal show={showLowStockModal} onHide={() => setShowLowStockModal(false)} size="lg">
@@ -311,8 +420,12 @@ const Admin = () => {
       <Modal show={showDeleteModal} onHide={() => setShowDeleteModal(false)} centered size="sm">
         <Modal.Body className="text-center py-4">
           <Trash2 size={40} className="text-danger mb-3 opacity-75" />
-          <h5 className="mb-2">¿Eliminar usuario?</h5>
-          <p className="text-muted small mb-0">Esta acción no se puede deshacer.</p>
+          <h5 className="mb-2">¿Eliminar {deleteType === 'user' ? 'usuario' : 'cliente'}?</h5>
+          <p className="text-muted small mb-0">
+            {deleteType === 'customer' 
+              ? 'Las ventas se reasignarán a Consumidor Final.' 
+              : 'Esta acción no se puede deshacer.'}
+          </p>
           <div className="d-flex justify-content-center gap-2 mt-4">
             <Button variant="light" size="sm" className="px-3" onClick={() => setShowDeleteModal(false)}>
               Cancelar
