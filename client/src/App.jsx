@@ -10,6 +10,7 @@ import MySales from './components/MySales';
 import Admin from './components/Admin';
 import CustomerAccount from './components/CustomerAccount';
 import Settings from './components/Settings';
+import ServerConfig from './components/ServerConfig';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
 
@@ -132,6 +133,7 @@ function AppContent() {
           <Route path="/settings" element={
             user.role === 'admin' ? <Settings /> : <Navigate to="/" replace />
           } />
+          <Route path="/server-config" element={<ServerConfig />} />
         </Routes>
       </Container>
     </Router>

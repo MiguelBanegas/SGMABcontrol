@@ -31,9 +31,7 @@ const getLocalIp = () => {
   return undefined;
 };
 
-
 const bonjour = require("bonjour")();
-
 
 const app = express();
 const http = require("http");
@@ -79,6 +77,18 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });
 
+// Endpoint para auto-descubrimiento en redes sin mDNS
+app.get("/api/server-info", (req, res) => {
+  const localIp = getLocalIp();
+  res.json({
+    ip: localIp || "unknown",
+    port: PORT,
+    hostname: os.hostname(),
+    serviceName: "sgm",
+    version: WEB_VERSION,
+  });
+});
+
 // Servir Frontend (Busca la carpeta dist)
 const clientDistPath = path.join(__dirname, "../client/dist");
 if (fs.existsSync(clientDistPath)) {
@@ -118,7 +128,7 @@ server.listen(PORT, "0.0.0.0", () => {
   // Publicar el servidor en la red local vía mDNS (Bonjour)
   try {
     bonjour.publish({
-      name: "servidor-node",
+      name: "sgm",
       type: "http",
       port: PORT,
     });

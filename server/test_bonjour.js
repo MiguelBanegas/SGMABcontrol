@@ -9,7 +9,7 @@ bonjour.find({ type: "http" }, function (service) {
     "en",
     service.referer.address + ":" + service.port
   );
-  if (service.name === "Servidor-Node") {
+  if (service.name === "sgm") {
     console.log("✅ ¡ÉXITO! El servidor está siendo detectado correctamente.");
   }
 });
