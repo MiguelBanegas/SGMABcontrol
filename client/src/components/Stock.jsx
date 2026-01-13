@@ -242,20 +242,20 @@ const Stock = () => {
                   onClick={() => handleEditProduct(p)}
                   className="d-flex align-items-center"
                 >
-                  <div className="me-3" style={{ width: '80px', height: '80px', overflow: 'hidden', borderRadius: '4px' }}>
+                  <div className="me-3" style={{ width: '140px', height: '140px', overflow: 'hidden', borderRadius: '4px', border: '1px solid #eee', flexShrink: 0 }}>
                     {p.image_url ? (
                       <img src={`${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <div className="bg-light w-100 h-100 d-flex align-items-center justify-content-center text-muted">
-                        <ImageIcon size={16} className="opacity-25" />
+                        <ImageIcon size={40} className="opacity-25" />
                       </div>
                     )}
                   </div>
                   <div className="flex-grow-1">
-                    <div className="fw-bold small">{p.name}</div>
-                    <div className="text-muted" style={{ fontSize: '0.75rem' }}>SKU: {p.sku} | Stock: {Math.floor(p.stock)}</div>
+                    <div className="fw-bold fs-4">{p.name}</div>
+                    <div className={`${idx === selectedIndex ? 'text-white-50' : 'text-muted'}`} style={{ fontSize: '0.9rem' }}>SKU: {p.sku} | Stock: {Math.floor(p.stock)}</div>
                   </div>
-                  <div className="text-primary fw-bold">${p.price_sell}</div>
+                  <div className={`fw-bold h3 mb-0 ${idx === selectedIndex ? 'text-warning' : 'text-primary'}`}>${p.price_sell}</div>
                 </ListGroup.Item>
               ))}
             </ListGroup>

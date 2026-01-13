@@ -1232,12 +1232,12 @@ const Sales = () => {
                       className={`d-flex align-items-center justify-content-between p-3 ${selectedIndex === idx ? 'bg-primary text-white shadow' : ''}`}
                     >
                       <div className="d-flex align-items-center">
-                        <div className="bg-light rounded me-3 d-flex align-items-center justify-content-center" style={{ width: '80px', height: '80px' }}>
-                          {p.image_url ? <img src={`${p.image_url}`} style={{ width: '100%' }} /> : <Search size={20} />}
+                        <div className="bg-light rounded me-3 d-flex align-items-center justify-content-center overflow-hidden" style={{ width: '140px', height: '140px', border: '1px solid #eee', flexShrink: 0 }}>
+                          {p.image_url ? <img src={`${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Search size={40} className="opacity-25" />}
                         </div>
                         <div>
-                          <strong>{p.name}</strong>
-                          <div className="text-muted x-small">SKU: {p.sku}</div>
+                          <strong className="fs-4 d-block">{p.name}</strong>
+                          <div className={`${selectedIndex === idx ? 'text-white-50' : 'text-muted'} fs-6`}>SKU: {p.sku}</div>
                           {p.promo_type && p.promo_type !== 'none' && (
                             <div className="mt-1">
                               {p.promo_type === 'price' && (
@@ -1258,9 +1258,9 @@ const Sales = () => {
                       </div>
                       <div className="text-end">
                         {p.promo_type === 'price' && p.price_offer && (
-                          <div className="text-decoration-line-through text-muted small">${p.price_sell}</div>
+                          <div className={`text-decoration-line-through small ${selectedIndex === idx ? 'text-white-50' : 'text-muted'}`}>${p.price_sell}</div>
                         )}
-                        <div className={`fw-bold ${p.promo_type === 'price' ? 'text-success' : 'text-primary'}`}>
+                        <div className={`fw-bold h3 mb-0 ${selectedIndex === idx ? 'text-warning' : (p.promo_type === 'price' ? 'text-success' : 'text-primary')}`}>
                           ${p.promo_type === 'price' ? p.price_offer : p.price_sell}
                         </div>
                       </div>
@@ -1282,7 +1282,7 @@ const Sales = () => {
                     <tr>
                       <th style={{ width: '80px' }}>Cod.</th>
                       <th>Producto</th>
-                      <th className="text-center">Cant.</th>
+                      <th className="text-center" style={{ width: '100px' }}>Cant.</th>
                       <th className="text-end">Precio</th>
                       <th className="text-end">Subtotal</th>
                       <th></th>
@@ -1305,7 +1305,7 @@ const Sales = () => {
                           <div className="d-flex align-items-center gap-2">
                             <div 
                               className="bg-light rounded flex-shrink-0 d-flex align-items-center justify-content-center overflow-hidden" 
-                              style={{ width: '64px', height: '64px', border: '1px solid #eee' }}
+                              style={{ width: '100px', height: '100px', border: '1px solid #eee' }}
                             >
                               {item.image_url ? (
                                 <img 
@@ -1398,7 +1398,7 @@ const Sales = () => {
                                     ${rawTotalOriginal.toFixed(2)}
                                   </div>
                                 )}
-                                <div className="fw-bold">${finalSubtotal.toFixed(2)}</div>
+                                <div className="fw-bold h4 mb-0">${finalSubtotal.toFixed(2)}</div>
                                 {savings > 0 && (
                                   <div className="text-danger x-small fw-bold">
                                     Ahorro: ${savings.toFixed(2)}
