@@ -10,6 +10,12 @@ router.get(
   verifyToken,
   saleController.getProductSalesStats
 );
+router.get(
+  "/products-report",
+  verifyToken,
+  isAdmin,
+  saleController.getProductsReport
+);
 router.get("/history", verifyToken, isAdmin, saleController.getSalesHistory);
 router.patch(
   "/:id/status",

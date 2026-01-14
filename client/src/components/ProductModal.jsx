@@ -35,9 +35,11 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   const [showScanner, setShowScanner] = useState(false);
   const [error, setError] = useState('');
   const skuRef = useRef(null);
+  const stockAdjustmentRef = useRef(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [stockAdjustment, setStockAdjustment] = useState('');
+  const [estimatedPercentage, setEstimatedPercentage] = useState(20);
 
   React.useEffect(() => {
     if (editProduct) {
@@ -69,8 +71,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   }, [editProduct, show]);
 
   React.useEffect(() => {
-    if (show && editProduct && nameRef.current) {
-      setTimeout(() => nameRef.current.focus(), 200);
+    if (show && editProduct && stockAdjustmentRef.current) {
+      setTimeout(() => stockAdjustmentRef.current.focus(), 200);
     }
   }, [show, editProduct]);
 
@@ -128,26 +130,44 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   };
 
   const handleStockAdjustment = async (e) => {
-    if (e.key === 'Enter') {
+    if (e && e.key === 'Enter') {
       e.preventDefault();
-      const adjustment = parseFloat(stockAdjustment);
-      if (!isNaN(adjustment) && adjustment !== 0) {
-        try {
-          const newStock = Math.max(0, (parseFloat(formData.stock) || 0) + adjustment);
-          const token = localStorage.getItem('token');
-          await axios.patch(`/api/products/${editProduct.id}`, 
-            { stock: newStock },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-          
-          setFormData(prev => ({ ...prev, stock: newStock }));
-          setStockAdjustment('');
-          toast.success('Stock actualizado');
-          refreshProducts();
-        } catch (err) {
-          console.error('Error al ajustar stock:', err);
-          toast.error('Error al actualizar stock');
+      await executeStockAdjustment();
+    }
+  };
+
+  const executeStockAdjustment = async () => {
+    const adjustment = parseFloat(stockAdjustment);
+    if (!isNaN(adjustment) && adjustment !== 0) {
+      try {
+        const newStock = Math.max(0, (parseFloat(formData.stock) || 0) + adjustment);
+        const token = localStorage.getItem('token');
+        await axios.patch(`/api/products/${editProduct.id}`, 
+          { stock: newStock },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        
+        // Si es ajuste positivo, registrar compra
+        if (adjustment > 0) {
+          await axios.post('/api/purchases', {
+            items: [{
+              product_id: editProduct.id,
+              quantity: adjustment,
+              price_buy: parseFloat(formData.price_buy) || 0
+            }],
+            notes: `Ajuste de stock: +${adjustment}`
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
         }
+        
+        setFormData(prev => ({ ...prev, stock: newStock }));
+        setStockAdjustment('');
+        toast.success('Stock actualizado');
+        refreshProducts();
+      } catch (err) {
+        console.error('Error al ajustar stock:', err);
+        toast.error('Error al actualizar stock');
       }
     }
   };
@@ -257,15 +277,35 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     if (image) data.append('image', image);
 
     try {
+      let productId;
+      
       if (editProduct) {
         await axios.put(`/api/products/${editProduct.id}`, data, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
+        productId = editProduct.id;
       } else {
-        await axios.post('/api/products', data, {
+        const response = await axios.post('/api/products', data, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
+        productId = response.data.id;
+        
+        // Registrar compra si hay stock inicial
+        if (parseFloat(finalFormData.stock) > 0) {
+          const token = localStorage.getItem('token');
+          await axios.post('/api/purchases', {
+            items: [{
+              product_id: productId,
+              quantity: parseFloat(finalFormData.stock),
+              price_buy: parseFloat(finalFormData.price_buy) || 0
+            }],
+            notes: 'Stock inicial'
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
       }
+      
       toast.success(editProduct ? 'Producto actualizado' : 'Producto creado');
       refreshProducts();
       
@@ -531,11 +571,23 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                         onChange={handleInputChange} 
                         step="0.01" 
                         required 
-                        placeholder={formData.price_buy ? (parseFloat(formData.price_buy) * 1.20).toFixed(2) : '0.00'}
+                        placeholder={formData.price_buy ? (parseFloat(formData.price_buy) * (1 + estimatedPercentage / 100)).toFixed(2) : '0.00'}
                       />
-                      <Form.Text className="text-muted">
-                        {formData.price_buy && `Sugerencia (+20%): $${(parseFloat(formData.price_buy) * 1.20).toFixed(2)}`}
-                      </Form.Text>
+                      <InputGroup size="sm" className="mt-2">
+                        <InputGroup.Text>% Ganancia:</InputGroup.Text>
+                        <Form.Control 
+                          type="number" 
+                          value={estimatedPercentage}
+                          onChange={(e) => setEstimatedPercentage(parseFloat(e.target.value) || 0)}
+                          step="1"
+                          min="0"
+                          max="500"
+                          style={{ maxWidth: '80px' }}
+                        />
+                        <InputGroup.Text className="text-muted small">
+                          {formData.price_buy && `= $${(parseFloat(formData.price_buy) * (1 + estimatedPercentage / 100)).toFixed(2)}`}
+                        </InputGroup.Text>
+                      </InputGroup>
                     </Form.Group>
                   </Col>
                 </Row>
@@ -557,14 +609,23 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                           </InputGroup.Text>
                           <Form.Control 
                             type="number" 
-                            className="border-start-0"
+                            className="border-start-0 border-end-0"
                             placeholder="Ej: 5 o -2"
                             value={stockAdjustment}
                             onChange={(e) => setStockAdjustment(e.target.value)}
                             onKeyDown={handleStockAdjustment}
+                            ref={stockAdjustmentRef}
                           />
+                          <Button 
+                            variant="success" 
+                            size="sm"
+                            onClick={executeStockAdjustment}
+                            disabled={!stockAdjustment || parseFloat(stockAdjustment) === 0}
+                          >
+                            Aceptar
+                          </Button>
                         </InputGroup>
-                        <Form.Text className="x-small text-muted">Presiona Enter para aplicar</Form.Text>
+                        <Form.Text className="x-small text-muted">Presiona Enter o haz clic en Aceptar</Form.Text>
                       </div>
                     </div>
                   ) : (

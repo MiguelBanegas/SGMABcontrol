@@ -363,6 +363,7 @@ const Stock = () => {
                   <Form.Control 
                     type="number" 
                     placeholder="+/- stock"
+                    className="border-start-0 border-end-0"
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
@@ -382,6 +383,28 @@ const Stock = () => {
                       }
                     }}
                   />
+                  <Button 
+                    variant="success" 
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const input = e.target.closest('.input-group').querySelector('input[type="number"]');
+                      const adjustment = parseFloat(input.value);
+                      if (!isNaN(adjustment) && adjustment !== 0) {
+                        const newStock = Math.max(0, product.stock + adjustment);
+                        axios.patch(`/api/products/${product.id}`, 
+                          { stock: newStock },
+                          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                        ).then(() => {
+                          input.value = '';
+                          fetchProducts();
+                          fetchTopSellers();
+                        }).catch(err => console.error('Error updating stock:', err));
+                      }
+                    }}
+                  >
+                    ✓
+                  </Button>
                 </InputGroup>
               </Card.Body>
             </Card>

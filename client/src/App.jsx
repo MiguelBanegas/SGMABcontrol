@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { Navbar, Nav, Container, Button } from 'react-bootstrap';
-import { ShoppingCart, Package, Users, LogOut, Receipt, Settings as SettingsIcon, CreditCard } from 'lucide-react';
+import { ShoppingCart, Package, Users, LogOut, Receipt, Settings as SettingsIcon, CreditCard, DollarSign } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Stock from './components/Stock';
@@ -11,6 +11,7 @@ import Admin from './components/Admin';
 import CustomerAccount from './components/CustomerAccount';
 import Settings from './components/Settings';
 import ServerConfig from './components/ServerConfig';
+import CashRegister from './components/CashRegister';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
 
@@ -96,6 +97,9 @@ function AppContent() {
               <Nav.Link as={Link} to="/customer-accounts" className="px-3">
                 <CreditCard className="me-1" size={18} /> Cuenta Corriente
               </Nav.Link>
+              <Nav.Link as={Link} to="/cash-register" className="px-3">
+                <DollarSign className="me-1" size={18} /> Mi Caja
+              </Nav.Link>
               {user.role === 'admin' && (
                 <>
                   <Nav.Link as={Link} to="/admin" className="px-3">
@@ -127,6 +131,7 @@ function AppContent() {
           <Route path="/mis-ventas" element={<MySales />} />
           <Route path="/stock" element={<Stock />} />
           <Route path="/customer-accounts" element={<CustomerAccount />} />
+          <Route path="/cash-register" element={<CashRegister />} />
           <Route path="/admin" element={
             user.role === 'admin' ? <Admin /> : <Navigate to="/" replace />
           } />

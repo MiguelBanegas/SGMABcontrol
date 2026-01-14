@@ -367,6 +367,32 @@ exports.recordPayment = async (req, res) => {
       }
     }
 
+    // Registrar en caja abierta si existe
+    const openRegister = await trx("cash_registers")
+      .where({
+        user_id: req.user.id,
+        business_id: req.user.business_id,
+        status: "open",
+      })
+      .first();
+
+    if (openRegister) {
+      // Calcular el total de pagos registrados
+      const totalPayments = batchPayments
+        ? batchPayments.reduce((acc, pay) => acc + parseFloat(pay.amount), 0)
+        : parseFloat(amount);
+
+      // Registrar movimiento en cash_movements
+      await trx("cash_movements").insert({
+        cash_register_id: openRegister.id,
+        type: "account_payment",
+        amount: totalPayments,
+        description: batchPayments
+          ? `Cobro de cuenta corriente - ${customer.name} (${batchPayments.length} pagos)`
+          : `Cobro de cuenta corriente - ${customer.name}`,
+      });
+    }
+
     await trx.commit();
 
     res.json({

@@ -15,6 +15,8 @@ const customerRoutes = require("./routes/customerRoutes");
 const customerAccountRoutes = require("./routes/customerAccounts");
 const notificationRoutes = require("./routes/notificationRoutes");
 const printRoutes = require("./routes/printRoutes");
+const purchaseRoutes = require("./routes/purchaseRoutes");
+const cashRegisterRoutes = require("./routes/cashRegisterRoutes");
 const { startSpooler } = require("./services/printService");
 const path = require("path");
 
@@ -73,6 +75,8 @@ app.use("/api/customer-accounts", customerAccountRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/print", printRoutes);
+app.use("/api/purchases", purchaseRoutes);
+app.use("/api/cash-registers", cashRegisterRoutes);
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
 });

@@ -44,3 +44,11 @@ client/dist/
 server/spooler/print_log.txt
 server/spooler/completed/*.html
 server/spooler/temp/*.html
+
+# Backups and temporary files
+backup*.mn
+backup*/
+backup*.zip
+temp_sqlite/
+server/product_record.json
+start-ngrok.bat

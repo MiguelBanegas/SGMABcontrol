@@ -134,6 +134,20 @@ exports.createSale = async (req, res) => {
     // Guardar venta (creditUsed se calculará después)
     const finalDebtAfterCredit = 0; // Se calculará después
 
+    // Buscar caja abierta (para cualquier método de pago)
+    let cash_register_id = null;
+    const openRegister = await trx("cash_registers")
+      .where({
+        user_id: req.user.id,
+        business_id: req.user.business_id,
+        status: "open",
+      })
+      .first();
+
+    if (openRegister) {
+      cash_register_id = openRegister.id;
+    }
+
     await trx("sales").insert({
       id,
       user_id,
@@ -149,6 +163,7 @@ exports.createSale = async (req, res) => {
       credit_applied: 0, // Initial credit applied is 0, will be updated
       status: "completado", // Initial status, will be updated
       settled_at: null, // Initial settled_at, will be updated
+      cash_register_id: cash_register_id, // Asociar con caja abierta
       created_at: created_at || trx.fn.now(),
     });
 
@@ -673,5 +688,40 @@ exports.getProductSalesStats = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error al obtener estadísticas del producto" });
+  }
+};
+
+// Obtener reporte de productos vendidos por período
+exports.getProductsReport = async (req, res) => {
+  const { startDate, endDate } = req.query;
+
+  try {
+    // Validar que se proporcionen las fechas
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        message: "Se requieren startDate y endDate",
+      });
+    }
+
+    // Obtener reporte de productos vendidos
+    const report = await db("sale_items")
+      .join("sales", "sale_items.sale_id", "sales.id")
+      .join("products", "sale_items.product_id", "products.id")
+      .where("sales.business_id", req.user.business_id)
+      .whereBetween("sales.created_at", [startDate, endDate])
+      .select(
+        "products.id as product_id",
+        "products.name as product_name",
+        "products.sku",
+        db.raw("SUM(sale_items.quantity)::FLOAT as total_quantity"),
+        db.raw("SUM(sale_items.subtotal)::FLOAT as total_revenue")
+      )
+      .groupBy("products.id", "products.name", "products.sku")
+      .orderBy("total_quantity", "desc");
+
+    res.json(report);
+  } catch (error) {
+    console.error("Error en getProductsReport:", error);
+    res.status(500).json({ message: "Error al obtener reporte de productos" });
   }
 };
