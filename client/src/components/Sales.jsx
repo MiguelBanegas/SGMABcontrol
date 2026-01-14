@@ -431,11 +431,36 @@ const Sales = () => {
       if (e.key === 'F10') {
         e.preventDefault();
         
-        // Si no estamos en Cuenta Corriente, el primer paso es el monto de pago
-        const isNotCtaCte = paymentMethodRef.current !== 'Cta Cte';
+        // Obtener valores actuales
+        const currentCart = cartRef.current;
+        const currentCustomer = selectedCustomerRef.current;
+        const currentPaymentMethod = paymentMethodRef.current;
+        const currentAmountPaid = amountPaidRef.current;
+        const currentTotal = calculateTotal(currentCart);
+        
+        // Si no hay productos, no hacer nada
+        if (currentCart.length === 0) return;
+        
+        const isNotCtaCte = currentPaymentMethod !== 'Cta Cte';
         const isPaymentFocused = document.activeElement === paymentInputRef.current;
         const isCustomerFocused = document.activeElement === customerInputRef.current;
-
+        
+        // Verificar si el pago es suficiente
+        const paid = parseFloat(currentAmountPaid) || 0;
+        const isPaymentSufficient = paid >= currentTotal;
+        
+        // Verificar si hay cliente seleccionado (no Cons. Final)
+        const hasValidCustomer = currentCustomer && 
+          !currentCustomer.name.toLowerCase().includes('cons. final') &&
+          !currentCustomer.name.toLowerCase().includes('consumidor final');
+        
+        // Si el pago es suficiente O hay un cliente válido seleccionado, cerrar venta directamente
+        if (isPaymentSufficient || hasValidCustomer) {
+          handleCheckout();
+          return;
+        }
+        
+        // Flujo normal si no se cumplen las condiciones de cierre automático
         if (isNotCtaCte && !isPaymentFocused && !isCustomerFocused) {
           // 1er paso: Ir a Monto a Pagar
           paymentInputRef.current?.focus();

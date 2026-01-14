@@ -8,6 +8,9 @@ import SalesHistory from './SalesHistory';
 import CtaCteManager from './CtaCteManager';
 import NotificationsCenter from './NotificationsCenter';
 import ProductSalesAnalytics from './ProductSalesAnalytics';
+import ProductSalesReport from './ProductSalesReport';
+import PurchasesReport from './PurchasesReport';
+import CashRegisterHistory from './CashRegisterHistory';
 import socket from '../socket';
 import { toast } from 'react-hot-toast';
 
@@ -349,6 +352,15 @@ const Admin = () => {
         </Tab>
         <Tab eventKey="product-analytics" title="Análisis por Producto">
           <ProductSalesAnalytics />
+        </Tab>
+        <Tab eventKey="products-report" title="Reporte de Productos">
+          <ProductSalesReport />
+        </Tab>
+        <Tab eventKey="purchases" title="Compras">
+          <PurchasesReport />
+        </Tab>
+        <Tab eventKey="cash-registers" title="Arqueos de Caja">
+          <CashRegisterHistory />
         </Tab>
         {/* <Tab eventKey="ctacte" title="Cuentas Corrientes">
           <CtaCteManager />

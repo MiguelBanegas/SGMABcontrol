@@ -35,6 +35,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   const [showScanner, setShowScanner] = useState(false);
   const [error, setError] = useState('');
   const skuRef = useRef(null);
+  const stockAdjustmentRef = useRef(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [stockAdjustment, setStockAdjustment] = useState('');
@@ -70,8 +71,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
   }, [editProduct, show]);
 
   React.useEffect(() => {
-    if (show && editProduct && nameRef.current) {
-      setTimeout(() => nameRef.current.focus(), 200);
+    if (show && editProduct && stockAdjustmentRef.current) {
+      setTimeout(() => stockAdjustmentRef.current.focus(), 200);
     }
   }, [show, editProduct]);
 
@@ -145,6 +146,20 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
           { stock: newStock },
           { headers: { Authorization: `Bearer ${token}` } }
         );
+        
+        // Si es ajuste positivo, registrar compra
+        if (adjustment > 0) {
+          await axios.post('/api/purchases', {
+            items: [{
+              product_id: editProduct.id,
+              quantity: adjustment,
+              price_buy: parseFloat(formData.price_buy) || 0
+            }],
+            notes: `Ajuste de stock: +${adjustment}`
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
         
         setFormData(prev => ({ ...prev, stock: newStock }));
         setStockAdjustment('');
@@ -262,15 +277,35 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     if (image) data.append('image', image);
 
     try {
+      let productId;
+      
       if (editProduct) {
         await axios.put(`/api/products/${editProduct.id}`, data, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
+        productId = editProduct.id;
       } else {
-        await axios.post('/api/products', data, {
+        const response = await axios.post('/api/products', data, {
           headers: { 'Content-Type': 'multipart/form-data' }
         });
+        productId = response.data.id;
+        
+        // Registrar compra si hay stock inicial
+        if (parseFloat(finalFormData.stock) > 0) {
+          const token = localStorage.getItem('token');
+          await axios.post('/api/purchases', {
+            items: [{
+              product_id: productId,
+              quantity: parseFloat(finalFormData.stock),
+              price_buy: parseFloat(finalFormData.price_buy) || 0
+            }],
+            notes: 'Stock inicial'
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
       }
+      
       toast.success(editProduct ? 'Producto actualizado' : 'Producto creado');
       refreshProducts();
       
@@ -579,6 +614,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                             value={stockAdjustment}
                             onChange={(e) => setStockAdjustment(e.target.value)}
                             onKeyDown={handleStockAdjustment}
+                            ref={stockAdjustmentRef}
                           />
                           <Button 
                             variant="success" 
