@@ -43,7 +43,12 @@ router.put(
 );
 router.patch("/:id", verifyToken, isAdmin, productController.patchProduct);
 router.delete("/:id", verifyToken, isAdmin, productController.deleteProduct);
-router.post("/:id/adjust-stock", verifyToken, productController.adjustStock); // El ajuste de stock puede ser por vendedor o admin, según decidas. Lo dejo con verifyToken.
+router.post(
+  "/:id/adjust-stock",
+  verifyToken,
+  isAdmin,
+  productController.adjustStock
+); // El ajuste de stock solo por admin.
 router.get("/categories", verifyToken, productController.getCategories);
 router.post(
   "/categories",
