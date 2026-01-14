@@ -4,6 +4,7 @@ import { Plus, Search, Package, Image as ImageIcon, TrendingUp, Camera } from 'l
 import axios from 'axios';
 import ProductModal from './ProductModal';
 import BarcodeScanner from './BarcodeScanner';
+import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
 
 const Stock = () => {
@@ -16,9 +17,9 @@ const Stock = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [showScanner, setShowScanner] = useState(false);
+  const { user } = useAuth();
   const searchInputRef = useRef(null);
-  const searchTimeoutRef = useRef(null);
-  const searchResultsRef = useRef(null);
+  const isAdmin = user?.role === 'admin';
 
   const fetchProducts = async () => {
     try {
@@ -97,6 +98,7 @@ const Stock = () => {
     : [];
 
   const handleEditProduct = (product) => {
+    if (!isAdmin) return; // Bloquear edición para vendedores
     setEditingProduct(product);
     setShowModal(true);
     setSearchTerm('');
@@ -262,9 +264,11 @@ const Stock = () => {
           )}
         </Col>
         <Col className="text-end">
-          <Button variant="primary" onClick={() => { setEditingProduct(null); setShowModal(true); }} className="d-flex align-items-center rounded-pill px-4 shadow-sm ms-auto">
-            <Plus size={20} className="me-1" /> Nuevo Producto
-          </Button>
+          {isAdmin && (
+            <Button variant="primary" onClick={() => { setEditingProduct(null); setShowModal(true); }} className="d-flex align-items-center rounded-pill px-4 shadow-sm ms-auto">
+              <Plus size={20} className="me-1" /> Nuevo Producto
+            </Button>
+          )}
         </Col>
       </Row>
 
@@ -356,56 +360,58 @@ const Stock = () => {
                     Stock: {Math.floor(product.stock)}
                   </Badge>
                 </div>
-                <InputGroup size="sm" className="mt-auto">
-                  <InputGroup.Text className="bg-light border-end-0">
-                    <Package size={14} />
-                  </InputGroup.Text>
-                  <Form.Control 
-                    type="number" 
-                    placeholder="+/- stock"
-                    className="border-start-0 border-end-0"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
+                {isAdmin && (
+                  <InputGroup size="sm" className="mt-auto">
+                    <InputGroup.Text className="bg-light border-end-0">
+                      <Package size={14} />
+                    </InputGroup.Text>
+                    <Form.Control 
+                      type="number" 
+                      placeholder="+/- stock"
+                      className="border-start-0 border-end-0"
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.stopPropagation();
+                          const adjustment = parseFloat(e.target.value);
+                          if (!isNaN(adjustment) && adjustment !== 0) {
+                            const newStock = Math.max(0, product.stock + adjustment);
+                            axios.patch(`/api/products/${product.id}`, 
+                              { stock: newStock },
+                              { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                            ).then(() => {
+                              e.target.value = '';
+                              fetchProducts();
+                              fetchTopSellers();
+                            }).catch(err => console.error('Error updating stock:', err));
+                          }
+                        }
+                      }}
+                    />
+                    <Button 
+                      variant="success" 
+                      size="sm"
+                      onClick={(e) => {
                         e.stopPropagation();
-                        const adjustment = parseFloat(e.target.value);
+                        const input = e.target.closest('.input-group').querySelector('input[type="number"]');
+                        const adjustment = parseFloat(input.value);
                         if (!isNaN(adjustment) && adjustment !== 0) {
                           const newStock = Math.max(0, product.stock + adjustment);
                           axios.patch(`/api/products/${product.id}`, 
                             { stock: newStock },
                             { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
                           ).then(() => {
-                            e.target.value = '';
+                            input.value = '';
                             fetchProducts();
                             fetchTopSellers();
                           }).catch(err => console.error('Error updating stock:', err));
                         }
-                      }
-                    }}
-                  />
-                  <Button 
-                    variant="success" 
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const input = e.target.closest('.input-group').querySelector('input[type="number"]');
-                      const adjustment = parseFloat(input.value);
-                      if (!isNaN(adjustment) && adjustment !== 0) {
-                        const newStock = Math.max(0, product.stock + adjustment);
-                        axios.patch(`/api/products/${product.id}`, 
-                          { stock: newStock },
-                          { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-                        ).then(() => {
-                          input.value = '';
-                          fetchProducts();
-                          fetchTopSellers();
-                        }).catch(err => console.error('Error updating stock:', err));
-                      }
-                    }}
-                  >
-                    ✓
-                  </Button>
-                </InputGroup>
+                      }}
+                    >
+                      ✓
+                    </Button>
+                  </InputGroup>
+                )}
               </Card.Body>
             </Card>
           </Col>

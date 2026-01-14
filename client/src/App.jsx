@@ -91,9 +91,6 @@ function AppContent() {
               <Nav.Link as={Link} to="/mis-ventas" className="px-3">
                 <Receipt className="me-1" size={18} /> Mis Ventas
               </Nav.Link>
-              <Nav.Link as={Link} to="/stock" className="px-3">
-                <Package className="me-1" size={18} /> Stock
-              </Nav.Link>
               <Nav.Link as={Link} to="/customer-accounts" className="px-3">
                 <CreditCard className="me-1" size={18} /> Cuenta Corriente
               </Nav.Link>
@@ -102,6 +99,9 @@ function AppContent() {
               </Nav.Link>
               {user.role === 'admin' && (
                 <>
+                  <Nav.Link as={Link} to="/stock" className="px-3">
+                    <Package className="me-1" size={18} /> Stock
+                  </Nav.Link>
                   <Nav.Link as={Link} to="/admin" className="px-3">
                     <Users className="me-1" size={18} /> Admin
                   </Nav.Link>
@@ -129,7 +129,9 @@ function AppContent() {
           } />
           <Route path="/ventas" element={<Sales />} />
           <Route path="/mis-ventas" element={<MySales />} />
-          <Route path="/stock" element={<Stock />} />
+          <Route path="/stock" element={
+            user.role === 'admin' ? <Stock /> : <Navigate to="/" replace />
+          } />
           <Route path="/customer-accounts" element={<CustomerAccount />} />
           <Route path="/cash-register" element={<CashRegister />} />
           <Route path="/admin" element={
