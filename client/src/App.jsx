@@ -14,7 +14,7 @@ import CashRegister from './components/CashRegister';
 import { Toaster, toast } from 'react-hot-toast';
 import socket from './socket';
 
-const APP_VERSION = '1.5.1';
+const APP_VERSION = '1.6.7';
 
 const Home = () => <div className="mt-4"><h2>Bienvenido al SGM</h2><p>Seleccione una opción del menú para comenzar.</p></div>;
 

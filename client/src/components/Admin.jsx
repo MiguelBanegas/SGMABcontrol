@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Table, Badge, Tabs, Tab, Button, Modal } from 'react-bootstrap';
+import { Row, Col, Card, Table, Badge, Tabs, Tab, Button, Modal, Form } from 'react-bootstrap';
 import { BarChart3, TrendingUp, Users, Package, UserPlus, Edit, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import UserModal from './UserModal';
@@ -29,6 +29,7 @@ const Admin = () => {
   const [deleteType, setDeleteType] = useState('user'); // 'user' o 'customer'
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [customerSearch, setCustomerSearch] = useState('');
 
   const fetchStats = async () => {
     try {
@@ -289,11 +290,38 @@ const Admin = () => {
         </Tab>
         <Tab eventKey="customers" title="Clientes">
           <Card className="border-0 shadow-sm mt-3">
-            <Card.Header className="bg-white py-3 border-0 d-flex justify-content-between align-items-center">
-              <h5 className="mb-0">Gestión de Clientes</h5>
-              <Button variant="primary" size="sm" onClick={() => { setEditingCustomer(null); setShowCustomerModal(true); }}>
-                <UserPlus size={18} className="me-1" /> Nuevo Cliente
-              </Button>
+            <Card.Header className="bg-white py-3 border-0">
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h5 className="mb-0">Gestión de Clientes</h5>
+                <Button variant="primary" size="sm" onClick={() => { setEditingCustomer(null); setShowCustomerModal(true); }}>
+                  <UserPlus size={18} className="me-1" /> Nuevo Cliente
+                </Button>
+              </div>
+              <Row>
+                <Col md={6}>
+                  <div className="position-relative">
+                    <Form.Control
+                      type="text"
+                      placeholder="🔍 Buscar por nombre o teléfono..."
+                      value={customerSearch}
+                      onChange={(e) => setCustomerSearch(e.target.value)}
+                      className="rounded-pill"
+                    />
+                    {customerSearch && (
+                      <Button 
+                        variant="link" 
+                        className="position-absolute end-0 top-50 translate-middle-y text-muted p-0 me-3"
+                        onClick={() => setCustomerSearch('')}
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    )}
+                  </div>
+                </Col>
+                <Col md={6} className="text-end text-muted small mt-2 mt-md-0 d-flex align-items-center justify-content-end">
+                   Total: {customers.length} clientes
+                </Col>
+              </Row>
             </Card.Header>
             <Card.Body>
               <Table responsive hover>
@@ -307,7 +335,12 @@ const Admin = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {customers.map(c => (
+                  {customers
+                    .filter(c => 
+                      c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
+                      (c.phone && c.phone.includes(customerSearch))
+                    )
+                    .map(c => (
                     <tr key={c.id}>
                       <td>
                         <div className="fw-bold">{c.name}</div>

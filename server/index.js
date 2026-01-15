@@ -46,7 +46,7 @@ const io = new Server(server, {
   },
 });
 
-const WEB_VERSION = "1.5.1";
+const WEB_VERSION = "1.6.7";
 const MOBILE_VERSION = "1.0.1";
 
 app.set("io", io);

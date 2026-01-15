@@ -9,9 +9,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'react-hot-toast';
 import socket from '../socket';
 import CustomerModal from './CustomerModal';
-import { User, UserPlus } from 'lucide-react';
+import { User, UserPlus, Share2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import SalesTabs from './SalesTabs';
+import Ticket from './Ticket';
+import { shareTicketViaWhatsApp } from '../utils/ticketUtils';
 
 const Sales = () => {
   const latestSearchTerm = useRef('');
@@ -58,6 +60,12 @@ const Sales = () => {
   const [amountPaid, setAmountPaid] = useState('0');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [customerBalance, setCustomerBalance] = useState(null);
+  const [autoWhatsApp, setAutoWhatsApp] = useState(() => {
+    const saved = localStorage.getItem('auto_whatsapp');
+    return saved === null ? false : saved === 'true';
+  });
+  const [customerToEdit, setCustomerToEdit] = useState(null);
+  const [pendingWhatsAppSale, setPendingWhatsAppSale] = useState(null);
   const paymentInputRef = useRef(null);
   const customersRef = useRef([]);
   const selectedCustomerRef = useRef(null);
@@ -70,6 +78,8 @@ const Sales = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [editingSaleId, setEditingSaleId] = useState(null);
+  const [lastCompletedSale, setLastCompletedSale] = useState(null);
+  const ticketRef = useRef(null);
 
   // Estado para ventas múltiples
   const [salesTabs, setSalesTabs] = useState([{
@@ -949,6 +959,37 @@ const Sales = () => {
     }
   };
 
+  const handleCustomerUpdate = () => {
+    // Re-sincronizar lista de clientes
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    axios.get('/api/customers', { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => {
+        setCustomers(res.data);
+        syncCustomers(res.data);
+        
+        // Si estábamos esperando el teléfono para enviar WhatsApp
+        if (customerToEdit && pendingWhatsAppSale) {
+          const updated = res.data.find(c => c.id === customerToEdit.id);
+          if (updated && updated.phone) {
+            shareTicketViaWhatsApp({ ...pendingWhatsAppSale, customer_phone: updated.phone });
+            setPendingWhatsAppSale(null);
+          }
+        }
+        
+        // Actualizar el cliente seleccionado si fue el que se editó
+        const currentSelected = selectedCustomerRef.current;
+        if (currentSelected) {
+          const updated = res.data.find(c => c.id === currentSelected.id);
+          if (updated) setSelectedCustomer(updated);
+        }
+        
+        setCustomerToEdit(null);
+      })
+      .catch(err => console.error('Error al actualizar clientes:', err));
+  };
+
   const handleCheckout = async () => {
     // Usar valores de los refs para asegurar que el listener de F10 (que es una clausura) tenga los datos actuales
     const currentCart = cartRef.current;
@@ -1105,6 +1146,7 @@ const Sales = () => {
         ...saleData,
         seller_name: user?.username || 'Vendedor',
         customer_name: currentCustomer?.name || 'Anónimo',
+        customer_phone: currentCustomer?.phone || null,
         items: currentCart.map(item => {
           const calc = calculateItemPrice(item);
           return {
@@ -1119,6 +1161,20 @@ const Sales = () => {
         })
       };
 
+      setLastCompletedSale(ticketData);
+
+      // Lógica de automatización: WhatsApp prioritario sobre Impresión si hay celular
+      if (autoWhatsApp && ticketData.customer_phone) {
+        shareTicketViaWhatsApp(ticketData);
+      } else if (autoPrint) {
+        handlePrintTicket(ticketData);
+      }
+
+      // Si autoWhatsApp está encendido pero NO hay celular, avisar al usuario
+      if (autoWhatsApp && !ticketData.customer_phone && currentCustomer && !currentCustomer.name.toLowerCase().includes('cons. final')) {
+         toast('El cliente no tiene celular registrado para envío automático.', { icon: '📱', duration: 3000 });
+      }
+
       // Notificación de éxito con opción de impresión manual
       const successMessage = difference < 0 
         ? `Venta registrada con deuda de $${Math.abs(difference).toFixed(2)}`
@@ -1132,21 +1188,52 @@ const Sales = () => {
               Vuelto: <strong>${difference.toFixed(2)}</strong>
             </div>
           )}
-          <br />
-          <Button 
-            variant="primary" 
-            size="sm" 
-            className="mt-2 w-100"
-            onClick={() => {
-              handlePrintTicket(ticketData);
-              toast.dismiss(t.id);
-            }}
-          >
-            <Printer size={14} className="me-1" /> Imprimir Ticket
-          </Button>
+          <div className="d-flex flex-column gap-2 mt-2">
+            <Button 
+              variant="primary" 
+              size="sm" 
+              className="w-100"
+              onClick={() => {
+                handlePrintTicket(ticketData);
+                toast.dismiss(t.id);
+              }}
+            >
+              <Printer size={14} className="me-1" /> Imprimir Ticket
+            </Button>
+            <Button 
+              variant="success" 
+              size="sm" 
+              className="w-100"
+              onClick={async () => {
+                // Si no hay celular y hay un cliente que no sea Cons. Final
+                if (!ticketData.customer_phone && ticketData.customer_id) {
+                  const customer = customers.find(c => c.id === ticketData.customer_id);
+                  if (customer && !customer.name.toLowerCase().includes('cons. final')) {
+                    setPendingWhatsAppSale(ticketData);
+                    setCustomerToEdit(customer);
+                    setShowCustomerModal(true);
+                    toast.dismiss(t.id);
+                    return;
+                  }
+                }
+                try {
+                  await shareTicketViaWhatsApp(ticketData);
+                  toast.dismiss(t.id);
+                } catch (error) {
+                  console.error(error);
+                  toast.error('Error al enviar por WhatsApp');
+                }
+              }}
+            >
+              <Share2 size={14} className="me-1" /> 
+              {!ticketData.customer_phone && ticketData.customer_id && !ticketData.customer_name.toLowerCase().includes('cons. final')
+                ? 'Agregar Celular y Enviar'
+                : 'Enviar por WhatsApp'}
+            </Button>
+          </div>
         </span>
       ), {
-        duration: 5000,
+        duration: 8000,
         icon: '💰',
       });
 
@@ -1773,6 +1860,22 @@ const Sales = () => {
               </Form.Select>
             </div>
             
+            <div className="mb-2 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
+               <div className="d-flex align-items-center gap-2">
+                 <Share2 size={18} className={autoWhatsApp ? "text-success" : "text-muted"} />
+                 <span className="small">WhatsApp auto.</span>
+               </div>
+               <Form.Check 
+                 type="switch"
+                 id="auto-whatsapp-switch"
+                 checked={autoWhatsApp}
+                 onChange={(e) => {
+                   setAutoWhatsApp(e.target.checked);
+                   localStorage.setItem('auto_whatsapp', e.target.checked);
+                 }}
+               />
+            </div>
+
             <div className="mb-4 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
                <div className="d-flex align-items-center gap-2">
                  <Printer size={18} className={autoPrint ? "text-success" : "text-muted"} />
@@ -1835,11 +1938,19 @@ const Sales = () => {
 
       <CustomerModal 
         show={showCustomerModal} 
-        handleClose={() => setShowCustomerModal(false)}
+        handleClose={() => {
+          setShowCustomerModal(false);
+          setCustomerToEdit(null);
+        }}
+        editCustomer={customerToEdit}
+        refreshCustomers={handleCustomerUpdate}
         onCustomerCreated={(c) => {
           selectCustomer(c);
-          setCustomers([...customers, c]);
-          syncCustomers([...customers, c]);
+          if (!customers.some(cust => cust.id === c.id)) {
+            const newCustomers = [...customers, c];
+            setCustomers(newCustomers);
+            syncCustomers(newCustomers);
+          }
         }}
       />
 
@@ -1916,6 +2027,7 @@ const Sales = () => {
           </Modal.Footer>
         </Form>
       </Modal>
+      
     </div>
   );
 };
