@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Badge, Collapse, Spinner } from 'react-bootstrap';
-import { Receipt, ChevronDown, ChevronUp, Printer } from 'lucide-react';
+import { Receipt, ChevronDown, ChevronUp, Printer, Edit } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
 
 function MySales() {
+  const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedSale, setExpandedSale] = useState(null);
@@ -261,7 +263,8 @@ function MySales() {
                           month: '2-digit',
                           year: 'numeric',
                           hour: '2-digit',
-                          minute: '2-digit'
+                          minute: '2-digit',
+                          hour12: true
                         })}
                       </td>
                       <td>{sale.customer_name || 'Anónimo'}</td>
@@ -275,14 +278,23 @@ function MySales() {
                         </Badge>
                       </td>
                       <td className="text-center">
-                        <Button
-                          variant="outline-primary"
-                          size="sm"
-                          onClick={() => printTicket(sale)}
-                        >
-                          <Printer size={16} className="me-1" />
-                          Reimprimir
-                        </Button>
+                        <div className="d-flex justify-content-center gap-2">
+                          <Button
+                            variant="outline-primary"
+                            size="sm"
+                            onClick={() => printTicket(sale)}
+                          >
+                            <Printer size={16} className="me-1" />
+                            Reimprimir
+                          </Button>
+                          <Button 
+                            variant="outline-warning" 
+                            size="sm" 
+                            onClick={() => navigate('/ventas', { state: { editSale: sale } })}
+                          >
+                            <Edit size={16} className="me-1" /> Editar
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                     <tr>

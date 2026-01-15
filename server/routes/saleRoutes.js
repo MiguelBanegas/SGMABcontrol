@@ -54,7 +54,7 @@ router.delete(
 
 // Ruta para obtener ventas del vendedor
 router.get("/my-sales", verifyToken, saleController.getMySales);
-
+router.put("/:id", verifyToken, saleController.updateSale);
 router.get("/:id", verifyToken, saleController.getSaleDetail);
 
 module.exports = router;

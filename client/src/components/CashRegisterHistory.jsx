@@ -239,7 +239,7 @@ const CashRegisterHistory = () => {
                       {new Date(register.opened_at).toLocaleDateString('es-AR')}
                       <br />
                       <small className="text-muted">
-                        {new Date(register.opened_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(register.opened_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}
                       </small>
                     </td>
                     <td>
@@ -248,7 +248,7 @@ const CashRegisterHistory = () => {
                           {new Date(register.closed_at).toLocaleDateString('es-AR')}
                           <br />
                           <small className="text-muted">
-                            {new Date(register.closed_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                            {new Date(register.closed_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: true })}
                           </small>
                         </>
                       ) : (
@@ -321,11 +321,11 @@ const CashRegisterHistory = () => {
               </Row>
               <Row className="mb-3">
                 <Col md={6}>
-                  <strong>Apertura:</strong> {new Date(selectedRegister.opened_at).toLocaleString('es-AR')}
+                  <strong>Apertura:</strong> {new Date(selectedRegister.opened_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
                 </Col>
                 <Col md={6}>
                   <strong>Cierre:</strong>{' '}
-                  {selectedRegister.closed_at ? new Date(selectedRegister.closed_at).toLocaleString('es-AR') : 'Aún abierta'}
+                  {selectedRegister.closed_at ? new Date(selectedRegister.closed_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : 'Aún abierta'}
                 </Col>
               </Row>
 
@@ -501,7 +501,7 @@ const CashRegisterHistory = () => {
                           </td>
                           <td>{mov.description}</td>
                           <td className="text-end">${parseFloat(mov.amount).toFixed(2)}</td>
-                          <td>{new Date(mov.created_at).toLocaleString('es-AR')}</td>
+                          <td>{new Date(mov.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -527,7 +527,7 @@ const CashRegisterHistory = () => {
                           <tr key={idx}>
                             <td>{sale.payment_method}</td>
                             <td className="text-end">${parseFloat(sale.total).toFixed(2)}</td>
-                            <td>{new Date(sale.created_at).toLocaleString('es-AR')}</td>
+                            <td>{new Date(sale.created_at).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</td>
                           </tr>
                         ))}
                       </tbody>
