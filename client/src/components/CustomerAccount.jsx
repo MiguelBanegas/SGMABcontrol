@@ -19,6 +19,7 @@ const CustomerAccount = () => {
   const [expandedTransaction, setExpandedTransaction] = useState(null);
   const [selectedDebts, setSelectedDebts] = useState([]); // Array of sale_ids
   const [selectedTransactionForPayment, setSelectedTransactionForPayment] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('Efectivo');
 
   useEffect(() => {
     fetchCustomers();
@@ -140,6 +141,8 @@ const CustomerAccount = () => {
       } else if (selectedTransactionForPayment) {
         payload.sale_id = selectedTransactionForPayment.sale_id;
       }
+
+      payload.payment_method = paymentMethod;
 
       await axios.post(`/api/customer-accounts/${selectedCustomer.id}/payments`, payload, {
         headers: { Authorization: `Bearer ${token}` }
@@ -327,7 +330,7 @@ const CustomerAccount = () => {
                   )}
                   <Form onSubmit={handleRecordPayment}>
                     <Row>
-                      <Col md={4}>
+                      <Col md={3}>
                         <Form.Group className="mb-3">
                           <Form.Label>Monto</Form.Label>
                           <InputGroup>
@@ -343,7 +346,22 @@ const CustomerAccount = () => {
                           </InputGroup>
                         </Form.Group>
                       </Col>
-                      <Col md={6}>
+                      <Col md={3}>
+                        <Form.Group className="mb-3">
+                          <Form.Label>Método de Pago</Form.Label>
+                          <Form.Select
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                          >
+                            <option value="Efectivo">Efectivo</option>
+                            <option value="Transferencia">Transferencia</option>
+                            <option value="MP">Mercado Pago</option>
+                            <option value="Débito">Débito</option>
+                            <option value="Crédito">Crédito</option>
+                          </Form.Select>
+                        </Form.Group>
+                      </Col>
+                      <Col md={4}>
                         <Form.Group className="mb-3">
                           <Form.Label>Descripción (opcional)</Form.Label>
                           <Form.Control
@@ -385,6 +403,7 @@ const CustomerAccount = () => {
                         <tr>
                           <th>Fecha</th>
                           <th>Descripción</th>
+                          <th className="text-center">Medio</th>
                           <th className="text-end">Monto Histórico</th>
                           <th className="text-end">Pagar HOY</th>
                           <th className="text-center">Acciones</th>
@@ -406,7 +425,14 @@ const CustomerAccount = () => {
                               <td style={{ whiteSpace: 'pre-line' }}>
                                 {transaction.description && transaction.description.split(',').map((line, i) => (
                                   <div key={i}>{line.trim()}</div>
-                                ))}
+                                  ))}
+                              </td>
+                              <td className="text-center small">
+                                {transaction.type === 'payment' && (
+                                  <Badge bg="light" text="dark" className="border">
+                                    {transaction.payment_method || 'Efectivo'}
+                                  </Badge>
+                                )}
                               </td>
                               <td className="text-end">
                                 <Badge bg={transaction.type === 'debt' ? 'danger' : 'success'}>

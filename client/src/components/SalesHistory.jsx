@@ -3,13 +3,15 @@ import { Table, Button, Modal, Badge, Row, Col, Form, InputGroup, Pagination, Ca
 import axios from 'axios';
 import { format, isSameDay, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { Eye, User, Calendar, Search, Filter, Printer, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, User, Calendar, Search, Filter, Printer, ChevronLeft, ChevronRight, Trash2, Edit } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import Ticket from './Ticket';
 import socket from '../socket';
 import { db } from '../db/localDb';
 
 const SalesHistory = () => {
+  const navigate = useNavigate();
   const [sales, setSales] = useState([]);
   const [selectedSale, setSelectedSale] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -245,7 +247,7 @@ const SalesHistory = () => {
             <tr key={sale.id}>
               <td>
                 <div className="small">
-                  {format(new Date(sale.created_at), "dd/MM/yyyy, HH:mm", { locale: es })}hs
+                  {format(new Date(sale.created_at), "dd/MM/yyyy, hh:mm a", { locale: es })}
                 </div>
               </td>
               <td>
@@ -264,9 +266,14 @@ const SalesHistory = () => {
               </td>
               <td className="text-end fw-bold text-primary">${Number(sale.total || 0).toFixed(2)}</td>
               <td className="text-center">
-                <Button variant="outline-primary" size="sm" onClick={() => openDetail(sale)}>
-                   Ver Detalle
-                </Button>
+                <div className="d-flex justify-content-center gap-2">
+                  <Button variant="outline-primary" size="sm" onClick={() => openDetail(sale)}>
+                    <Eye size={14} className="me-1" /> Detalle
+                  </Button>
+                  <Button variant="outline-warning" size="sm" onClick={() => navigate('/ventas', { state: { editSale: sale } })}>
+                    <Edit size={14} className="me-1" /> Editar
+                  </Button>
+                </div>
               </td>
             </tr>
           ))}
@@ -329,7 +336,7 @@ const SalesHistory = () => {
                 <Row className="gy-2">
                   <Col sm={4}>
                     <div className="text-muted small mb-1">📅 Fecha y Hora</div>
-                    <div className="fw-bold">{format(new Date(selectedSale.created_at), "dd/MM/yyyy - HH:mm", { locale: es })}hs</div>
+                    <div className="fw-bold">{format(new Date(selectedSale.created_at), "dd/MM/yyyy - hh:mm a", { locale: es })}</div>
                   </Col>
                   <Col sm={4} className="text-sm-center">
                     <div className="text-muted small mb-1">👤 Vendedor</div>

@@ -239,7 +239,9 @@ exports.getCustomerBalances = async (req, res) => {
 // Registrar pago de un cliente (soporta pago único o por lote)
 exports.recordPayment = async (req, res) => {
   const { id } = req.params;
-  const { amount, description, sale_id, batchPayments } = req.body;
+  const { amount, description, sale_id, batchPayments, payment_method } =
+    req.body;
+  const effectivePaymentMethod = payment_method || "Efectivo";
 
   if (
     (!amount || amount <= 0) &&
@@ -337,6 +339,7 @@ exports.recordPayment = async (req, res) => {
             description:
               pay.description ||
               `Pago vinculado a venta - $${parseFloat(pay.amount).toFixed(2)}`,
+            payment_method: effectivePaymentMethod,
             business_id: req.user.business_id,
           })
           .returning("*");
@@ -358,6 +361,7 @@ exports.recordPayment = async (req, res) => {
           balance: currentBalance,
           description:
             description || `Pago recibido - $${parseFloat(amount).toFixed(2)}`,
+          payment_method: effectivePaymentMethod,
           business_id: req.user.business_id,
         })
         .returning("*");
@@ -387,6 +391,7 @@ exports.recordPayment = async (req, res) => {
         cash_register_id: openRegister.id,
         type: "account_payment",
         amount: totalPayments,
+        payment_method: effectivePaymentMethod,
         description: batchPayments
           ? `Cobro de cuenta corriente - ${customer.name} (${batchPayments.length} pagos)`
           : `Cobro de cuenta corriente - ${customer.name}`,

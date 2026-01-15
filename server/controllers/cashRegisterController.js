@@ -56,7 +56,7 @@ exports.closeCashRegister = async (req, res) => {
     const salesByMethod = await db("sales")
       .where({ cash_register_id: id })
       .select("payment_method")
-      .sum("total as total")
+      .select(db.raw("SUM(total - COALESCE(debt_amount, 0)) as total"))
       .groupBy("payment_method");
 
     const totals = {
@@ -73,6 +73,7 @@ exports.closeCashRegister = async (req, res) => {
           totals.cash = total;
           break;
         case "Transferencia":
+        case "MP":
           totals.transfer = total;
           break;
         case "Débito":
@@ -92,13 +93,35 @@ exports.closeCashRegister = async (req, res) => {
 
     const account_sales = parseFloat(debtsResult.total || 0);
 
-    // Obtener cobros de cuenta corriente
-    const paymentsResult = await db("cash_movements")
+    // Obtener cobros de cuenta corriente separados por método
+    const paymentsByMethod = await db("cash_movements")
       .where({ cash_register_id: id, type: "account_payment" })
+      .select("payment_method")
       .sum("amount as total")
-      .first();
+      .groupBy("payment_method");
 
-    const account_payments = parseFloat(paymentsResult.total || 0);
+    let account_payments_cash = 0;
+    let account_payments_electronic = { transfer: 0, debit: 0, credit: 0 };
+
+    paymentsByMethod.forEach((row) => {
+      const amt = parseFloat(row.total || 0);
+      if (row.payment_method === "Efectivo") account_payments_cash = amt;
+      else if (
+        row.payment_method === "Transferencia" ||
+        row.payment_method === "MP"
+      )
+        account_payments_electronic.transfer += amt;
+      else if (row.payment_method === "Débito")
+        account_payments_electronic.debit += amt;
+      else if (row.payment_method === "Crédito")
+        account_payments_electronic.credit += amt;
+    });
+
+    const account_payments =
+      account_payments_cash +
+      account_payments_electronic.transfer +
+      account_payments_electronic.debit +
+      account_payments_electronic.credit;
 
     // Obtener gastos y retiros
     const expenses = parseFloat(cashRegister.expenses || 0);
@@ -108,7 +131,7 @@ exports.closeCashRegister = async (req, res) => {
     const expected_amount =
       parseFloat(cashRegister.opening_amount) +
       totals.cash +
-      account_payments -
+      account_payments_cash -
       expenses -
       withdrawals;
 
@@ -116,20 +139,22 @@ exports.closeCashRegister = async (req, res) => {
     const difference = parseFloat(closing_amount) - expected_amount;
 
     // Cerrar caja
-    await db("cash_registers").where({ id }).update({
-      closing_amount,
-      expected_amount,
-      difference,
-      cash_sales: totals.cash,
-      transfer_sales: totals.transfer,
-      debit_sales: totals.debit,
-      credit_sales: totals.credit,
-      account_sales,
-      account_payments,
-      status: "closed",
-      closed_at: db.fn.now(),
-      notes,
-    });
+    await db("cash_registers")
+      .where({ id })
+      .update({
+        closing_amount,
+        expected_amount,
+        difference,
+        cash_sales: totals.cash,
+        transfer_sales: totals.transfer + account_payments_electronic.transfer,
+        debit_sales: totals.debit + account_payments_electronic.debit,
+        credit_sales: totals.credit + account_payments_electronic.credit,
+        account_sales,
+        account_payments,
+        status: "closed",
+        closed_at: db.fn.now(),
+        notes,
+      });
 
     res.json({
       message: "Caja cerrada exitosamente",
@@ -169,7 +194,7 @@ exports.getCurrentCashRegister = async (req, res) => {
     const salesByMethod = await db("sales")
       .where({ cash_register_id: cashRegister.id })
       .select("payment_method")
-      .sum("total as total")
+      .select(db.raw("SUM(total - COALESCE(debt_amount, 0)) as total"))
       .groupBy("payment_method");
 
     const totals = {
@@ -186,6 +211,7 @@ exports.getCurrentCashRegister = async (req, res) => {
           totals.cash = total;
           break;
         case "Transferencia":
+        case "MP":
           totals.transfer = total;
           break;
         case "Débito":
@@ -205,13 +231,35 @@ exports.getCurrentCashRegister = async (req, res) => {
 
     const account_sales = parseFloat(debtsResult.total || 0);
 
-    // Obtener cobros de cuenta corriente
-    const paymentsResult = await db("cash_movements")
+    // Obtener cobros de cuenta corriente separados por método
+    const paymentsByMethod = await db("cash_movements")
       .where({ cash_register_id: cashRegister.id, type: "account_payment" })
+      .select("payment_method")
       .sum("amount as total")
-      .first();
+      .groupBy("payment_method");
 
-    const account_payments = parseFloat(paymentsResult.total || 0);
+    let account_payments_cash = 0;
+    let account_payments_electronic = { transfer: 0, debit: 0, credit: 0 };
+
+    paymentsByMethod.forEach((row) => {
+      const amt = parseFloat(row.total || 0);
+      if (row.payment_method === "Efectivo") account_payments_cash = amt;
+      else if (
+        row.payment_method === "Transferencia" ||
+        row.payment_method === "MP"
+      )
+        account_payments_electronic.transfer += amt;
+      else if (row.payment_method === "Débito")
+        account_payments_electronic.debit += amt;
+      else if (row.payment_method === "Crédito")
+        account_payments_electronic.credit += amt;
+    });
+
+    const account_payments =
+      account_payments_cash +
+      account_payments_electronic.transfer +
+      account_payments_electronic.debit +
+      account_payments_electronic.credit;
 
     // Calcular efectivo esperado actual
     const expenses = parseFloat(cashRegister.expenses || 0);
@@ -220,7 +268,7 @@ exports.getCurrentCashRegister = async (req, res) => {
     const current_expected =
       parseFloat(cashRegister.opening_amount) +
       totals.cash +
-      account_payments -
+      account_payments_cash -
       expenses -
       withdrawals;
 
@@ -235,9 +283,10 @@ exports.getCurrentCashRegister = async (req, res) => {
     res.json({
       ...cashRegister,
       current_cash_sales: totals.cash,
-      current_transfer_sales: totals.transfer,
-      current_debit_sales: totals.debit,
-      current_credit_sales: totals.credit,
+      current_transfer_sales:
+        totals.transfer + account_payments_electronic.transfer,
+      current_debit_sales: totals.debit + account_payments_electronic.debit,
+      current_credit_sales: totals.credit + account_payments_electronic.credit,
       current_account_sales: account_sales,
       current_account_payments: account_payments,
       current_expected,
@@ -351,6 +400,7 @@ exports.getCashRegisterDetail = async (req, res) => {
     // Obtener movimientos
     const movements = await db("cash_movements")
       .where({ cash_register_id: id })
+      .select("*") // Asegurar que incluya payment_method
       .orderBy("created_at", "asc");
 
     // Calcular total vendido

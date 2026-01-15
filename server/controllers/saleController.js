@@ -422,7 +422,12 @@ exports.getSalesHistory = async (req, res) => {
         const items = await db("sale_items")
           .join("products", "sale_items.product_id", "products.id")
           .where({ sale_id: sale.id })
-          .select("sale_items.*", "products.name as product_name");
+          .select(
+            "sale_items.*",
+            "products.name as product_name",
+            "products.sku",
+            "products.image_url"
+          );
         return { ...sale, items };
       })
     );
@@ -572,7 +577,12 @@ exports.getMySales = async (req, res) => {
         const items = await db("sale_items")
           .join("products", "sale_items.product_id", "products.id")
           .where({ sale_id: sale.id })
-          .select("sale_items.*", "products.name as product_name");
+          .select(
+            "sale_items.*",
+            "products.name as product_name",
+            "products.sku",
+            "products.image_url"
+          );
         return { ...sale, items };
       })
     );
@@ -615,7 +625,12 @@ exports.getSaleDetail = async (req, res) => {
     const items = await db("sale_items")
       .join("products", "sale_items.product_id", "products.id")
       .where({ sale_id: sale.id })
-      .select("sale_items.*", "products.name as product_name");
+      .select(
+        "sale_items.*",
+        "products.name as product_name",
+        "products.sku",
+        "products.image_url"
+      );
 
     res.json({ ...sale, items });
   } catch (error) {
@@ -723,5 +738,343 @@ exports.getProductsReport = async (req, res) => {
   } catch (error) {
     console.error("Error en getProductsReport:", error);
     res.status(500).json({ message: "Error al obtener reporte de productos" });
+  }
+};
+
+// Actualizar una venta existente
+exports.updateSale = async (req, res) => {
+  const { id } = req.params;
+  const {
+    items,
+    customer_id,
+    payment_method,
+    amount_paid,
+    change_given,
+    created_at, // Opcional, por si se quiere cambiar la fecha
+  } = req.body;
+
+  const trx = await db.transaction();
+  try {
+    // 1. Obtener la venta actual
+    const oldSale = await trx("sales")
+      .where({ id, business_id: req.user.business_id })
+      .first();
+    if (!oldSale) {
+      await trx.rollback();
+      return res.status(404).json({ message: "Venta no encontrada" });
+    }
+
+    // Validar permisos: Admin o Dueño de la venta
+    if (req.user.role !== "admin" && oldSale.user_id !== req.user.id) {
+      await trx.rollback();
+      return res
+        .status(403)
+        .json({ message: "No tienes permiso para editar esta venta" });
+    }
+
+    const oldItems = await trx("sale_items").where({ sale_id: id });
+    const oldCustomerId = oldSale.customer_id;
+    const oldPaymentMethod = oldSale.payment_method;
+    const oldTotal = parseFloat(oldSale.total);
+    const oldCashDiscount = parseFloat(oldSale.cash_discount || 0);
+
+    // 2. Revertir Stock de items anteriores
+    for (const item of oldItems) {
+      await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .increment("stock", item.quantity);
+    }
+
+    // 3. Calcular nueva venta (Copiar lógica de createSale)
+    const cashDiscountSetting = await trx("settings")
+      .where({
+        key: "cash_discount_percent",
+        business_id: req.user.business_id,
+      })
+      .first();
+    const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
+
+    let subtotal = 0;
+    const newSaleItems = [];
+
+    for (const item of items) {
+      const product = await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .first();
+
+      let itemTotal = 0;
+      let effectiveUnitPrice = product.price_sell;
+
+      switch (product.promo_type) {
+        case "price":
+          if (product.price_offer) {
+            itemTotal = item.quantity * product.price_offer;
+            effectiveUnitPrice = product.price_offer;
+          } else {
+            itemTotal = item.quantity * product.price_sell;
+          }
+          break;
+        case "quantity":
+          if (product.promo_buy && product.promo_pay) {
+            const sets = Math.floor(item.quantity / product.promo_buy);
+            const remaining = item.quantity % product.promo_buy;
+            const paidItems = sets * product.promo_pay + remaining;
+            itemTotal = paidItems * product.price_sell;
+            effectiveUnitPrice = itemTotal / item.quantity;
+          } else {
+            itemTotal = item.quantity * product.price_sell;
+          }
+          break;
+        case "both":
+          if (product.promo_buy && product.promo_pay && product.price_offer) {
+            const sets = Math.floor(item.quantity / product.promo_buy);
+            const remaining = item.quantity % product.promo_buy;
+            const paidItems = sets * product.promo_pay + remaining;
+            itemTotal = paidItems * product.price_offer;
+            effectiveUnitPrice = itemTotal / item.quantity;
+          } else if (product.price_offer) {
+            itemTotal = item.quantity * product.price_offer;
+            effectiveUnitPrice = product.price_offer;
+          } else {
+            itemTotal = item.quantity * product.price_sell;
+          }
+          break;
+        default:
+          itemTotal = item.quantity * product.price_sell;
+      }
+
+      subtotal += itemTotal;
+      const discount = Math.max(
+        0,
+        (product.price_sell - effectiveUnitPrice) * item.quantity
+      );
+
+      newSaleItems.push({
+        sale_id: id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        price_unit: effectiveUnitPrice,
+        subtotal: itemTotal,
+        cost_at_sale: product.price_buy || 0,
+        discount_amount: discount,
+        promo_type: product.promo_type || "none",
+        promo_buy: product.promo_buy,
+        promo_pay: product.promo_pay,
+        price_sell_at_sale: product.price_sell,
+        price_offer_at_sale: product.price_offer,
+        sell_by_weight: product.sell_by_weight ? 1 : 0,
+      });
+    }
+
+    let cashDiscount = 0;
+    if (payment_method === "Efectivo" && cashDiscountPercent > 0) {
+      cashDiscount = subtotal * (cashDiscountPercent / 100);
+    }
+    const total = subtotal - cashDiscount;
+
+    // 4. Actualizar Caja (Si la caja existe)
+    if (oldSale.cash_register_id) {
+      const register = await trx("cash_registers")
+        .where({ id: oldSale.cash_register_id })
+        .first();
+      // Solo actualizamos totales si la caja está cerrada (si está abierta se calculan al cerrar)
+      // Pero mejor actualizamos siempre para consistencia visual
+      // Calcular diferencias netas por método de pago
+      const netChanges = {
+        cash_sales: 0,
+        transfer_sales: 0,
+        debit_sales: 0,
+        credit_sales: 0,
+        account_sales: 0,
+      };
+
+      const getMethodKey = (method) => {
+        switch (method) {
+          case "Efectivo":
+            return "cash_sales";
+          case "Transferencia":
+          case "MP":
+            return "transfer_sales";
+          case "Débito":
+            return "debit_sales";
+          case "Crédito":
+            return "credit_sales";
+          default:
+            return null;
+        }
+      };
+
+      // Restar totales viejos (monto neto cobrado)
+      const oldKey = getMethodKey(oldPaymentMethod);
+      const oldNetPaid = oldTotal - parseFloat(oldSale.debt_amount || 0);
+      if (oldKey) netChanges[oldKey] -= oldNetPaid;
+
+      if (oldSale.debt_amount)
+        netChanges.account_sales -= parseFloat(oldSale.debt_amount);
+
+      // Sumar totales nuevos (monto neto cobrado)
+      const newKey = getMethodKey(payment_method);
+      const netPaid =
+        parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+      const newDebt = Math.max(0, total - netPaid);
+
+      if (newKey) netChanges[newKey] += netPaid;
+      if (newDebt > 0 && customer_id) netChanges.account_sales += newDebt;
+
+      const updateData = {};
+      for (const [key, diff] of Object.entries(netChanges)) {
+        if (diff !== 0) updateData[key] = db.raw(`?? + ?`, [key, diff]);
+      }
+
+      if (Object.keys(updateData).length > 0) {
+        await trx("cash_registers")
+          .where({ id: oldSale.cash_register_id })
+          .update(updateData);
+      }
+    }
+
+    // 5. Reemplazar Items de Venta
+    await trx("sale_items").where({ sale_id: id }).delete();
+    await trx("sale_items").insert(newSaleItems);
+
+    // 6. Actualizar Stock nuevo
+    for (const item of items) {
+      await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .decrement("stock", item.quantity);
+    }
+
+    // 7. Gestionar Cuenta Corriente (Complejo)
+    // Borrar transacciones viejas de esta venta
+    await trx("customer_account_transactions").where({ sale_id: id }).delete();
+
+    // Nueva lógica de registro (simplificada pero robusta)
+    if (customer_id) {
+      const netPaid =
+        parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+      const currentBalanceResult = await trx("customer_account_transactions")
+        .where({ customer_id, business_id: req.user.business_id })
+        .whereNot({ sale_id: id }) // No debería haber ninguna ya, pero por si acaso
+        .where("created_at", "<", oldSale.created_at)
+        .orderBy("created_at", "desc")
+        .orderBy("id", "desc")
+        .first();
+
+      let runningBalance = currentBalanceResult
+        ? parseFloat(currentBalanceResult.balance)
+        : 0;
+
+      // Insertar VENTA
+      runningBalance += total;
+      await trx("customer_account_transactions").insert({
+        customer_id,
+        sale_id: id,
+        type: "debt",
+        amount: total,
+        balance: runningBalance,
+        description: `Venta #${id.substring(0, 8)} (Editada)`,
+        business_id: req.user.business_id,
+        created_at: oldSale.created_at, // Mantener fecha original
+      });
+
+      // Insertar PAGO
+      if (netPaid > 0) {
+        runningBalance -= netPaid;
+        await trx("customer_account_transactions").insert({
+          customer_id,
+          sale_id: id,
+          type: "payment",
+          amount: netPaid,
+          balance: runningBalance,
+          description: `Pago contado en Venta #${id.substring(0, 8)} (Editada)`,
+          business_id: req.user.business_id,
+          created_at: oldSale.created_at,
+        });
+      }
+
+      // RECALCULAR balances posteriores para este cliente
+      const subsequentTxs = await trx("customer_account_transactions")
+        .where({ customer_id, business_id: req.user.business_id })
+        .where("created_at", ">", oldSale.created_at)
+        .orderBy("created_at", "asc")
+        .orderBy("id", "asc");
+
+      for (const tx of subsequentTxs) {
+        if (tx.type === "debt") runningBalance += parseFloat(tx.amount);
+        else runningBalance -= parseFloat(tx.amount);
+
+        await trx("customer_account_transactions")
+          .where({ id: tx.id })
+          .update({ balance: runningBalance });
+      }
+
+      // Si el cliente cambió, también hay que recalcular para el viejo
+      if (oldCustomerId && oldCustomerId !== customer_id) {
+        const oldCustBalanceRes = await trx("customer_account_transactions")
+          .where({
+            customer_id: oldCustomerId,
+            business_id: req.user.business_id,
+          })
+          .where("created_at", "<", oldSale.created_at)
+          .orderBy("created_at", "desc")
+          .orderBy("id", "desc")
+          .first();
+
+        let oldRunningBalance = oldCustBalanceRes
+          ? parseFloat(oldCustBalanceRes.balance)
+          : 0;
+        const oldSubsequentTxs = await trx("customer_account_transactions")
+          .where({
+            customer_id: oldCustomerId,
+            business_id: req.user.business_id,
+          })
+          .where("created_at", ">=", oldSale.created_at) // Cambió el cliente, así que todas desde la fecha de venta
+          .orderBy("created_at", "asc")
+          .orderBy("id", "asc");
+
+        for (const tx of oldSubsequentTxs) {
+          if (tx.type === "debt") oldRunningBalance += parseFloat(tx.amount);
+          else oldRunningBalance -= parseFloat(tx.amount);
+          await trx("customer_account_transactions")
+            .where({ id: tx.id })
+            .update({ balance: oldRunningBalance });
+        }
+      }
+    }
+
+    // 8. Actualizar Objeto Venta
+    const netPaidFinal =
+      parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+    const finalDebt = Math.max(0, total - netPaidFinal);
+
+    await trx("sales")
+      .where({ id })
+      .update({
+        customer_id: customer_id || null,
+        subtotal,
+        cash_discount: cashDiscount,
+        total,
+        payment_method: payment_method || "Efectivo",
+        amount_paid: amount_paid || null,
+        change_given: change_given || null,
+        debt_amount: finalDebt > 0 ? finalDebt : null,
+        status: finalDebt > 0 ? "pendiente" : "completado",
+        settled_at: finalDebt <= 0 ? trx.fn.now() : null,
+        created_at: created_at || oldSale.created_at,
+      });
+
+    await trx.commit();
+
+    // Notificar cambios por socket
+    req.app.get("io").emit("sales_updated");
+    req.app.get("io").emit("catalog_updated");
+
+    res.json({ message: "Venta actualizada con éxito" });
+  } catch (error) {
+    if (trx) await trx.rollback();
+    console.error("UPDATE_SALE_ERROR:", error);
+    res
+      .status(500)
+      .json({ message: "Error al actualizar la venta", error: error.message });
   }
 };

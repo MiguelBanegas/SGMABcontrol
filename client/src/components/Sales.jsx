@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal } from 'react-bootstrap';
-import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer, TrendingUp, TrendingDown } from 'lucide-react';
+import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer, TrendingUp, TrendingDown, Edit } from 'lucide-react';
 import { db, syncCatalog, syncCustomers, updateLocalProducts } from '../db/localDb';
 import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
@@ -39,6 +40,7 @@ const Sales = () => {
   const [showWeightModal, setShowWeightModal] = useState(false);
   const [currentWeightProduct, setCurrentWeightProduct] = useState(null);
   const [inputWeight, setInputWeight] = useState('');
+  const [weightEditMode, setWeightEditMode] = useState('add'); // 'add' o 'set'
   const [weightUnit, setWeightUnit] = useState('kg'); // 'gr' o 'kg'
   const weightInputRef = useRef(null);
   const [lastAddedProductId, setLastAddedProductId] = useState(null);
@@ -65,6 +67,9 @@ const Sales = () => {
   const [searchMode, setSearchMode] = useState(() => {
     return localStorage.getItem('search_mode') || 'server';
   });
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [editingSaleId, setEditingSaleId] = useState(null);
 
   // Estado para ventas múltiples
   const [salesTabs, setSalesTabs] = useState([{
@@ -118,6 +123,46 @@ const Sales = () => {
         : tab
     ));
   }, [cart, selectedCustomer, paymentMethod, amountPaid, activeTabId]);
+
+  // Cargar venta para editar si viene en el state
+  useEffect(() => {
+    if (location.state?.editSale) {
+      const sale = location.state.editSale;
+      setEditingSaleId(sale.id);
+      
+      // Transformar items de la venta al formato del carrito
+      const editCart = sale.items.map(item => ({
+        ...item,
+        id: item.product_id, // El carrito usa el id del producto
+        name: item.product_name,
+        sku: item.sku,
+        image_url: item.image_url,
+        quantity: parseFloat(item.quantity || 0),
+        price_sell: parseFloat(item.price_sell_at_sale || 0),
+        price_offer: parseFloat(item.price_offer_at_sale || 0),
+        price_buy: parseFloat(item.price_buy_at_sale || 0),
+        promo_type: item.promo_type || 'none',
+        promo_buy: item.promo_buy,
+        promo_pay: item.promo_pay,
+        sell_by_weight: item.sell_by_weight === 1 || item.sell_by_weight === true
+      }));
+
+      setCart(editCart);
+      
+      // Buscar el cliente en la lista local si existe
+      if (sale.customer_id) {
+        const customer = customers.find(c => c.id === sale.customer_id);
+        if (customer) setSelectedCustomer(customer);
+        else setSelectedCustomer({ id: sale.customer_id, name: sale.customer_name || 'Cargando...' });
+      }
+
+      setPaymentMethod(sale.payment_method);
+      setAmountPaid(sale.amount_paid?.toString() || '0');
+
+      // Limpiar el state para no volver a cargar
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state, customers]);
   
   // Función para calcular precio efectivo según tipo de promoción
   const calculateItemPrice = (item) => {
@@ -694,6 +739,7 @@ const Sales = () => {
   const addToCart = (product) => {
     if (product.sell_by_weight) {
       setCurrentWeightProduct(product);
+      setWeightEditMode('add');
       setInputWeight('');
       setWeightUnit('kg'); // Resetear a kg por defecto
       setShowWeightModal(true);
@@ -704,10 +750,10 @@ const Sales = () => {
       return;
     }
 
-    const existing = cart.find(item => item.id === product.id);
+    const existing = cart.find(item => String(item.id) === String(product.id));
     if (existing) {
       setCart(cart.map(item => 
-        item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
+        String(item.id) === String(product.id) ? { ...item, quantity: item.quantity + 1 } : item
       ));
     } else {
       setCart([...cart, { ...product, quantity: 1 }]);
@@ -740,11 +786,13 @@ const Sales = () => {
     }
 
     const product = currentWeightProduct;
-    const existing = cart.find(item => item.id === product.id);
+    const existing = cart.find(item => String(item.id) === String(product.id));
     
     if (existing) {
       setCart(cart.map(item => 
-        item.id === product.id ? { ...item, quantity: item.quantity + weight } : item
+        String(item.id) === String(product.id)
+          ? { ...item, quantity: weightEditMode === 'add' ? item.quantity + weight : weight } 
+          : item
       ));
     } else {
       setCart([...cart, { ...product, quantity: weight }]);
@@ -822,7 +870,7 @@ const Sales = () => {
 
   const updateQuantity = (productId, delta) => {
     setCart(cart.map(item => {
-      if (item.id === productId) {
+      if (String(item.id) === String(productId)) {
         const newQty = Math.max(1, item.quantity + delta);
         return { ...item, quantity: newQty };
       }
@@ -1000,9 +1048,15 @@ const Sales = () => {
     try {
       if (isOnline) {
         const token = localStorage.getItem('token');
-        await axios.post('/api/sales', saleData, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
+        if (editingSaleId) {
+          await axios.put(`/api/sales/${editingSaleId}`, saleData, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        } else {
+          await axios.post('/api/sales', saleData, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+        }
       }
       
       await db.offlineSales.add({ ...saleData, status: isOnline ? 'synced' : 'pending' });
@@ -1122,8 +1176,28 @@ const Sales = () => {
     }
   };
 
+  const cancelEdit = () => {
+    setEditingSaleId(null);
+    setCart([]);
+    setSelectedCustomer(null);
+    setPaymentMethod('Efectivo');
+    setAmountPaid('0');
+    toast('Edición cancelada', { icon: 'ℹ️' });
+  };
+
   return (
     <div className="pos-container py-2">
+      {editingSaleId && (
+        <div className="alert alert-warning mb-3 shadow-sm d-flex justify-content-between align-items-center">
+          <div>
+            <span className="fw-bold">⚠️ MODO EDICIÓN ACTIVADO:</span> Editando venta <strong>#{editingSaleId}</strong>.
+            Los cambios afectarán el stock y las cajas asociadas.
+          </div>
+          <Button variant="outline-danger" size="sm" onClick={cancelEdit}>
+            <Trash2 size={14} className="me-1" /> Salir de edición
+          </Button>
+        </div>
+      )}
       <Row>
         <Col lg={8}>
           <Card className="border-0 shadow-sm mb-4">
@@ -1373,11 +1447,20 @@ const Sales = () => {
                               <Button variant="light" size="sm" onClick={() => updateQuantity(item.id, 1)}><Plus size={14} /></Button>
                             )}
                             {item.sell_by_weight && (
+                              <>
                                 <Button variant="light" size="sm" onClick={() => {
                                     setCurrentWeightProduct(item);
+                                    setWeightEditMode('set');
+                                    setInputWeight(item.quantity.toString());
+                                    setShowWeightModal(true);
+                                }}><Edit size={14} /></Button>
+                                <Button variant="light" size="sm" onClick={() => {
+                                    setCurrentWeightProduct(item);
+                                    setWeightEditMode('add');
                                     setInputWeight('');
                                     setShowWeightModal(true);
                                 }}><Plus size={14} /></Button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1707,13 +1790,13 @@ const Sales = () => {
             </div>
 
             <Button 
-              variant="primary" 
+              variant={editingSaleId ? "warning" : "primary"} 
               size="lg" 
               className="w-100 py-3 fw-bold shadow"
               disabled={cart.length === 0}
               onClick={handleCheckout}
             >
-              FINALIZAR VENTA (F10)
+              {editingSaleId ? 'GUARDAR CAMBIOS' : 'FINALIZAR VENTA (F10)'}
             </Button>
 
             <Button 
@@ -1767,7 +1850,7 @@ const Sales = () => {
         onEntered={() => weightInputRef.current?.focus()}
       >
         <Modal.Header closeButton className="bg-primary text-white">
-          <Modal.Title>Ingresar Peso</Modal.Title>
+          <Modal.Title>{weightEditMode === 'add' ? 'Sumar Peso' : 'Corregir/Establecer Peso'}</Modal.Title>
         </Modal.Header>
         <Form onSubmit={handleWeightSubmit}>
           <Modal.Body>

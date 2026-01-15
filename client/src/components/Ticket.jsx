@@ -26,7 +26,7 @@ const Ticket = React.forwardRef(({ sale }, ref) => {
 
       <div style={{ marginBottom: '12px', fontSize: '10px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-          <span><b>Fecha:</b> {format(new Date(sale.created_at), "dd/MM/yyyy HH:mm", { locale: es })}</span>
+          <span><b>Fecha:</b> {format(new Date(sale.created_at), "dd/MM/yyyy hh:mm a", { locale: es })}</span>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
           <span><b>Vendedor:</b> {sale.seller_name}</span>
