@@ -12,3 +12,8 @@ export const getApiUrl = () => {
   const url = getServerUrl();
   return `${url}/api`;
 };
+
+export const isVpsConnection = () => {
+  const url = getServerUrl();
+  return url.includes("mabcontrol.ar");
+};

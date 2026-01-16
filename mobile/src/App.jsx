@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import 'bootstrap/dist/css/bootstrap.min.css';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Settings from './components/Settings';
+import { ConnectivityProvider } from './context/ConnectivityContext';
 import { Toaster } from 'react-hot-toast';
 
 import Login from './components/Login';
@@ -28,8 +29,10 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
-      <Toaster position="top-right" />
+      <ConnectivityProvider>
+        <AppContent />
+        <Toaster position="top-right" />
+      </ConnectivityProvider>
     </AuthProvider>
   );
 }
