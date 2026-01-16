@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Card, Form, InputGroup, Badge, ListGroup, Button, Container } from 'react-bootstrap';
-import { Search, Package, Image as ImageIcon, TrendingUp, Settings, LogOut, Camera, Plus } from 'lucide-react';
+import { Row, Col, Card, Form, InputGroup, Badge, ListGroup, Button, Container, Alert } from 'react-bootstrap';
+import { Search, Package, Image as ImageIcon, TrendingUp, Settings, LogOut, Camera, Plus, Globe } from 'lucide-react';
 import axios from 'axios';
-import { getApiUrl, getServerUrl } from '../utils/config';
+import { getApiUrl, getServerUrl, isVpsConnection } from '../utils/config';
 import socket from '../socket';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
 import { BarcodeScanner as CapBarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 import ProductDetailModal from './ProductDetailModal';
 import AddProductModal from './AddProductModal';
+import { useConnectivity } from '../context/ConnectivityContext';
+import { db } from '../utils/db';
+import { syncProducts } from '../utils/syncService';
+import toast from 'react-hot-toast';
 
-const APP_VERSION = '1.0.1';
+const APP_VERSION = '1.1.2';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
@@ -23,6 +27,8 @@ const Stock = () => {
   const [showDetail, setShowDetail] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [scannedSku, setScannedSku] = useState('');
+  const { isOffline } = useConnectivity();
+  const [isSyncing, setIsSyncing] = useState(false);
   const { logout, user } = useAuth();
   const isAdmin = user?.role?.toLowerCase() === 'admin';
 
@@ -51,10 +57,19 @@ const Stock = () => {
         setActiveTab('search');
         
         try {
-          const res = await axios.get(`${getApiUrl()}/products/sku/${sku}`);
-          if (res.data) {
-            setSelectedProduct(res.data);
+          let productData;
+          if (isOffline) {
+            productData = await db.products.where('sku').equalsIgnoreCase(sku).first();
+          } else {
+            const res = await axios.get(`${getApiUrl()}/products/sku/${sku}`);
+            productData = res.data;
+          }
+
+          if (productData) {
+            setSelectedProduct(productData);
             setShowDetail(true);
+          } else if (isOffline) {
+            alert('SKU no encontrado en modo offline: ' + sku);
           }
         } catch (searchErr) {
           if (searchErr.response?.status === 404) {
@@ -80,14 +95,29 @@ const Stock = () => {
   const fetchInitialData = async () => {
     setLoading(true);
     try {
+      if (isOffline) {
+        // En modo offline usamos todos los productos o limitamos
+        const allLocal = await db.products.toArray();
+        setTopSellers(Array.isArray(allLocal) ? allLocal.slice(0, 20) : []);
+        setLowStock(Array.isArray(allLocal) ? allLocal.filter(p => !p.stock || p.stock < 5) : []);
+        setLoading(false);
+        return;
+      }
+
       const [topRes, lowRes] = await Promise.all([
-        axios.get(`${getApiUrl()}/products/top-sellers`),
-        axios.get(`${getApiUrl()}/products/stats`)
+        axios.get(`${getApiUrl()}/products/top-sellers`).catch(() => ({ data: [] })),
+        axios.get(`${getApiUrl()}/products/stats`).catch(() => ({ data: { lowStockProducts: [] } }))
       ]);
-      setTopSellers(topRes.data);
-      setLowStock(lowRes.data.lowStockProducts || []);
+      setTopSellers(Array.isArray(topRes.data) ? topRes.data : []);
+      setLowStock(Array.isArray(lowRes.data?.lowStockProducts) ? lowRes.data.lowStockProducts : []);
+      
+      // Aprovechamos para sincronizar en segundo plano si estamos online
+      syncProducts();
     } catch (err) {
       console.error('Error al cargar datos iniciales:', err);
+      // Fallback a vacíos para evitar crash
+      setTopSellers([]);
+      setLowStock([]);
     } finally {
       setLoading(false);
     }
@@ -97,15 +127,47 @@ const Stock = () => {
     if (searchTerm.length < 3) return;
     setLoading(true);
     try {
-      // Por ahora usamos el endpoint general y filtramos, pero en un futuro podría ser un endpoint de búsqueda
-      const res = await axios.get(`${getApiUrl()}/products`);
-      const filtered = res.data.filter(p => 
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setProducts(filtered);
+      if (isOffline) {
+        const query = searchTerm.toLowerCase();
+        let filtered = await db.products
+          .filter(p => 
+            (p.name && p.name.toLowerCase().includes(query)) || 
+            (p.sku && p.sku.toLowerCase().includes(query))
+          )
+          .toArray();
+        
+        // Replicar relevancia del servidor: que empiecen con el término primero
+        filtered = filtered.sort((a, b) => {
+          const aName = a.name?.toLowerCase() || '';
+          const bName = b.name?.toLowerCase() || '';
+          const aSku = a.sku?.toLowerCase() || '';
+          const bSku = b.sku?.toLowerCase() || '';
+          
+          const aStarts = aName.startsWith(query) || aSku.startsWith(query);
+          const bStarts = bName.startsWith(query) || bSku.startsWith(query);
+          
+          if (aStarts && !bStarts) return -1;
+          if (!aStarts && bStarts) return 1;
+          return aName.localeCompare(bName);
+        });
+
+        setProducts(Array.isArray(filtered) ? filtered : []);
+      } else {
+        // Usar la búsqueda oficial del servidor
+        const res = await axios.get(`${getApiUrl()}/products/search?q=${searchTerm}`);
+        setProducts(Array.isArray(res.data) ? res.data : []);
+      }
     } catch (err) {
       console.error('Error en búsqueda:', err);
+      // Fallback a offline si el servidor falla
+      const query = searchTerm.toLowerCase();
+      const filtered = await db.products
+          .filter(p => 
+            (p.name && p.name.toLowerCase().includes(query)) || 
+            (p.sku && p.sku.toLowerCase().includes(query))
+          )
+          .toArray();
+      setProducts(filtered);
     } finally {
       setLoading(false);
     }
@@ -114,6 +176,14 @@ const Stock = () => {
   useEffect(() => {
     fetchInitialData();
   }, []);
+
+  // Sincronizar automáticamente al recuperar conexión
+  useEffect(() => {
+    if (!isOffline) {
+      console.log('Conexión recuperada, sincronizando...');
+      fetchInitialData();
+    }
+  }, [isOffline]);
 
   useEffect(() => {
     if (activeTab === 'search' && searchTerm.length >= 3) {
@@ -148,12 +218,36 @@ const Stock = () => {
   useEffect(() => {
     socket.on('version_check', (data) => {
       const serverMobileVersion = typeof data === 'object' ? data.mobile : null;
+      // Solo mostrar si es una versión DISTINTA y no la hemos ignorado
       if (serverMobileVersion && serverMobileVersion !== APP_VERSION) {
-        setNeedsUpdate(true);
+        const ignoredVersion = sessionStorage.getItem('ignore_version');
+        if (ignoredVersion !== serverMobileVersion) {
+          setNeedsUpdate(true);
+        }
+      } else if (serverMobileVersion === APP_VERSION) {
+        // Si el servidor ya tiene nuestra versión, asegurarnos de que el modal se cierre
+        setNeedsUpdate(false);
       }
     });
     return () => socket.off('version_check');
   }, []);
+
+  const handleManualSync = async () => {
+    if (isOffline) {
+      toast.error('No se puede sincronizar en modo offline');
+      return;
+    }
+    setIsSyncing(true);
+    toast.loading('Sincronizando catálogo...', { id: 'sync' });
+    const success = await syncProducts();
+    setIsSyncing(false);
+    if (success) {
+      toast.success('Sincronización completa', { id: 'sync' });
+      fetchInitialData();
+    } else {
+      toast.error('Error al sincronizar', { id: 'sync' });
+    }
+  };
 
   const handleProductClick = (product) => {
     setSelectedProduct(product);
@@ -167,21 +261,38 @@ const Stock = () => {
       {needsUpdate && (
         <div style={{
           position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-          backgroundColor: 'rgba(0,0,0,0.95)', zIndex: 10000,
+          backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 10000,
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           color: 'white', textAlign: 'center', padding: '30px'
         }}>
           <h2 className="mb-4">🚀 Nueva Versión 🚀</h2>
-          <p className="mb-4">Hay una actualización importante disponible para SGMABControl.</p>
-          <Button 
-            variant="primary" 
-            size="lg" 
-            className="w-100 rounded-pill py-3 fw-bold shadow-lg"
-            onClick={() => window.location.reload()}
-          >
-            Actualizar App
-          </Button>
-          <small className="mt-4 opacity-50">v{APP_VERSION} → Nueva</small>
+          <p className="mb-4">Hay una actualización disponible (v{APP_VERSION} → Nueva). Por seguridad, se recomienda instalar el nuevo APK.</p>
+          <div className="d-flex flex-column gap-3 w-100">
+            <Button 
+              variant="primary" 
+              size="lg" 
+              className="rounded-pill py-3 fw-bold shadow-lg"
+              onClick={() => window.location.reload()}
+            >
+              Recargar Contenido
+            </Button>
+            <Button 
+              variant="outline-light" 
+              size="sm" 
+              className="rounded-pill border-0 opacity-75"
+              onClick={() => {
+                // Sacar del servidor qué versión es para guardarla como ignorada
+                socket.emit('request_version'); // O simplemente guardamos una genérica
+                // Guardamos "true" o la versión si la tuviéramos a mano
+                setNeedsUpdate(false);
+                // Si tuviéramos la versión del servidor aquí la guardaríamos en sessionStorage
+                sessionStorage.setItem('ignore_version', 'needs_update'); 
+              }}
+            >
+              Continuar de todas formas (Temporal)
+            </Button>
+          </div>
+          <small className="mt-4 opacity-50">v{APP_VERSION}</small>
         </div>
       )}
       <div className="d-flex justify-content-between align-items-center mb-3 pt-2">
@@ -203,11 +314,36 @@ const Stock = () => {
             <Link to="/settings" className="btn btn-light btn-sm rounded-circle p-2 shadow-sm d-flex align-items-center justify-content-center" style={{ width: '38px', height: '38px' }}>
                 <Settings size={20} className="text-secondary" />
             </Link>
+            <Button 
+                variant="light" 
+                size="sm" 
+                className="rounded-circle p-2 shadow-sm d-flex align-items-center justify-content-center"
+                style={{ width: '38px', height: '38px' }}
+                onClick={handleManualSync}
+                disabled={isSyncing}
+            >
+                <TrendingUp size={20} className={isSyncing ? 'animate-spin' : 'text-success'} />
+            </Button>
             <Button variant="light" size="sm" onClick={logout} className="rounded-circle p-2 shadow-sm text-danger d-flex align-items-center justify-content-center" style={{ width: '38px', height: '38px' }}>
                 <LogOut size={20} />
             </Button>
         </div>
       </div>
+
+      {isVpsConnection() && !isOffline && (
+        <Alert variant="info" className="py-1 px-3 extra-small border-0 shadow-sm rounded-3 mb-2 d-flex align-items-center opacity-75">
+          <Globe size={14} className="me-2" />
+          <span>Conectado a la <b>Nube (VPS)</b>. Datos globales.</span>
+        </Alert>
+      )}
+
+      {isOffline && (
+        <Alert variant="warning" className="py-2 px-3 small border-0 shadow-sm rounded-3 mb-3 d-flex align-items-center">
+          <div className="spinner-grow spinner-grow-sm text-warning me-2" role="status"></div>
+          <span className="fw-bold">MODO OFFLINE ACTIVADO</span>
+          <span className="ms-2 opacity-75">Consultando base de datos local...</span>
+        </Alert>
+      )}
 
       <div className="d-flex bg-white rounded-pill p-1 mb-3 shadow-sm">
         <Button 
@@ -271,7 +407,9 @@ const Stock = () => {
                     onClick={() => handleProductClick(product)}
                   >
                     <div style={{ width: '50px', height: '50px', borderRadius: '8px', backgroundColor: '#f8f9fa', overflow: 'hidden', marginRight: '12px', flexShrink: 0 }}>
-                       {product.image_url ? (
+                       {product.local_image ? (
+                         <img src={product.local_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                       ) : product.image_url ? (
                          <img src={`${getServerUrl()}${product.image_url}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                        ) : (
                          <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted opacity-25">

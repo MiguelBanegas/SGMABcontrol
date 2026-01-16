@@ -1,5 +1,9 @@
 {
   "appId": "ar.mabcontrol.sgm",
   "appName": "SGM AB Control",
-  "webDir": "dist"
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "allowNavigation": ["*"]
+  }
 }

@@ -3,7 +3,7 @@ const os = require("os");
 
 console.log(
   ">>> SISTEMA INICIADO: Versión 1.5.0 - Puerto:",
-  process.env.PORT || 5051
+  process.env.PORT || 5051,
 );
 const express = require("express");
 const cors = require("cors");
@@ -46,8 +46,8 @@ const io = new Server(server, {
   },
 });
 
-const WEB_VERSION = "1.5.1";
-const MOBILE_VERSION = "1.0.1";
+const WEB_VERSION = "1.6.7";
+const MOBILE_VERSION = "1.1.2";
 
 app.set("io", io);
 app.set("version", WEB_VERSION);
@@ -137,7 +137,7 @@ server.listen(PORT, "0.0.0.0", () => {
       port: PORT,
     });
     console.log(
-      `Servicio Servidor-Node publicado vía Bonjour en puerto ${PORT}`
+      `Servicio Servidor-Node publicado vía Bonjour en puerto ${PORT}`,
     );
   } catch (error) {
     console.error("Error al publicar servicio Bonjour:", error);

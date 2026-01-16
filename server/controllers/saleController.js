@@ -413,7 +413,8 @@ exports.getSalesHistory = async (req, res) => {
       .select(
         "sales.*",
         "users.username as seller_name",
-        "customers.name as customer_name"
+        "customers.name as customer_name",
+        "customers.phone as customer_phone"
       )
       .orderBy("sales.created_at", "desc");
 
@@ -563,11 +564,17 @@ exports.getMySales = async (req, res) => {
     // Obtener ventas de la página actual
     const sales = await db("sales")
       .leftJoin("customers", "sales.customer_id", "customers.id")
+      .leftJoin("users", "sales.user_id", "users.id")
       .where({
         "sales.user_id": user_id,
         "sales.business_id": req.user.business_id,
       })
-      .select("sales.*", "customers.name as customer_name")
+      .select(
+        "sales.*",
+        "customers.name as customer_name",
+        "customers.phone as customer_phone",
+        "users.username as seller_name"
+      )
       .orderBy("sales.created_at", "desc")
       .limit(perPage)
       .offset(offset);
@@ -614,6 +621,7 @@ exports.getSaleDetail = async (req, res) => {
       .select(
         "sales.*",
         "customers.name as customer_name",
+        "customers.phone as customer_phone",
         "users.username as seller_name"
       )
       .first();

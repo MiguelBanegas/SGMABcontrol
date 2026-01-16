@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { toast } from 'react-hot-toast';
 import { Table, Button, Modal, Badge, Row, Col, Form, InputGroup, Pagination, Card, ListGroup } from 'react-bootstrap';
 import axios from 'axios';
 import { format, isSameDay, startOfDay } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
-import { Eye, User, Calendar, Search, Filter, Printer, ChevronLeft, ChevronRight, Trash2, Edit } from 'lucide-react';
+import { Eye, User, Calendar, Search, Filter, Printer, ChevronLeft, ChevronRight, Trash2, Edit, Share2 } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import Ticket from './Ticket';
 import socket from '../socket';
 import { db } from '../db/localDb';
+import { shareTicketViaWhatsApp } from '../utils/ticketUtils';
+import CustomerModal from './CustomerModal';
 
 const SalesHistory = () => {
   const navigate = useNavigate();
@@ -17,6 +20,9 @@ const SalesHistory = () => {
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [allCustomers, setAllCustomers] = useState([]);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerToEdit, setCustomerToEdit] = useState(null);
+  const [pendingWhatsAppSale, setPendingWhatsAppSale] = useState(null);
   const componentRef = React.useRef(null);
 
   // Estados de Filtros
@@ -138,6 +144,51 @@ const SalesHistory = () => {
   useEffect(() => {
     setCurrentPage(1);
   }, [filterDate, filterSeller, filterCustomer, filterPayment, filterStatus]);
+
+  const handleCustomerUpdate = async () => {
+    try {
+      await fetchCustomers();
+      await fetchHistory();
+      
+      const updatedCustomers = await db.customers.toArray();
+      setAllCustomers(updatedCustomers);
+
+      // Si estábamos esperando el teléfono para enviar WhatsApp
+      if (customerToEdit && pendingWhatsAppSale) {
+        const updated = updatedCustomers.find(c => c.id === customerToEdit.id);
+        if (updated && updated.phone) {
+          const saleToSend = { ...pendingWhatsAppSale, customer_phone: updated.phone };
+          await shareTicketViaWhatsApp(saleToSend);
+          setPendingWhatsAppSale(null);
+        }
+      }
+      setCustomerToEdit(null);
+    } catch (error) {
+      console.error('Error in handleCustomerUpdate:', error);
+    }
+  };
+
+  const handleWhatsAppClick = async (sale) => {
+    const customerId = sale.customer_id;
+    const hasPhone = sale.customer_phone;
+    
+    if (!hasPhone && customerId) {
+      const customer = allCustomers.find(c => c.id === customerId);
+      if (customer && !customer.name.toLowerCase().includes('cons. final')) {
+        setCustomerToEdit(customer);
+        setPendingWhatsAppSale(sale);
+        setShowCustomerModal(true);
+        return;
+      }
+    }
+
+    try {
+      await shareTicketViaWhatsApp(sale);
+    } catch (error) {
+      console.error(error);
+      toast.error('Error al enviar WhatsApp');
+    }
+  };
 
   if (loading) return <div className="text-center py-5">Cargando historial...</div>;
 
@@ -267,11 +318,19 @@ const SalesHistory = () => {
               <td className="text-end fw-bold text-primary">${Number(sale.total || 0).toFixed(2)}</td>
               <td className="text-center">
                 <div className="d-flex justify-content-center gap-2">
-                  <Button variant="outline-primary" size="sm" onClick={() => openDetail(sale)}>
-                    <Eye size={14} className="me-1" /> Detalle
+                  <Button variant="outline-primary" size="sm" onClick={() => openDetail(sale)} title="Ver Detalle">
+                    <Eye size={14} />
                   </Button>
-                  <Button variant="outline-warning" size="sm" onClick={() => navigate('/ventas', { state: { editSale: sale } })}>
-                    <Edit size={14} className="me-1" /> Editar
+                  <Button 
+                    variant="outline-success" 
+                    size="sm" 
+                    title="Enviar por WhatsApp"
+                    onClick={() => handleWhatsAppClick(sale)}
+                  >
+                    <Share2 size={14} />
+                  </Button>
+                  <Button variant="outline-warning" size="sm" onClick={() => navigate('/ventas', { state: { editSale: sale } })} title="Editar Venta">
+                    <Edit size={14} />
                   </Button>
                 </div>
               </td>
@@ -320,14 +379,29 @@ const SalesHistory = () => {
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Detalle de Venta</Modal.Title>
-          <Button 
-            variant="outline-dark" 
-            size="sm" 
-            className="ms-auto me-3 d-flex align-items-center gap-2"
-            onClick={handlePrint}
-          >
-            <Printer size={16} /> Imprimir Ticket / PDF
-          </Button>
+          {selectedSale && (
+            <div className="ms-auto d-flex gap-2 me-3">
+              <Button 
+                variant="outline-dark" 
+                size="sm" 
+                className="d-flex align-items-center gap-2"
+                onClick={handlePrint}
+              >
+                <Printer size={16} /> Imprimir
+              </Button>
+              <Button 
+                variant="outline-success" 
+                size="sm" 
+                className="d-flex align-items-center gap-2"
+                onClick={() => handleWhatsAppClick(selectedSale)}
+              >
+                <Share2 size={16} /> 
+                {!selectedSale.customer_phone && selectedSale.customer_id && !selectedSale.customer_name?.toLowerCase().includes('cons. final')
+                  ? 'Agregar Celular'
+                  : 'WhatsApp'}
+              </Button>
+            </div>
+          )}
         </Modal.Header>
         <Modal.Body>
           {selectedSale && (
@@ -447,9 +521,16 @@ const SalesHistory = () => {
         </Modal.Body>
       </Modal>
 
-      <div style={{ position: 'absolute', top: '-10000px', left: '-10000px' }}>
-        <Ticket ref={componentRef} sale={selectedSale} />
-      </div>
+      <CustomerModal 
+        show={showCustomerModal} 
+        handleClose={() => {
+          setShowCustomerModal(false);
+          setCustomerToEdit(null);
+          setPendingWhatsAppSale(null);
+        }}
+        editCustomer={customerToEdit}
+        refreshCustomers={handleCustomerUpdate}
+      />
     </div>
   );
 };

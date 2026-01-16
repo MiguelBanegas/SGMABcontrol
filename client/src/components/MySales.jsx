@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Table, Button, Badge, Collapse, Spinner } from 'react-bootstrap';
-import { Receipt, ChevronDown, ChevronUp, Printer, Edit } from 'lucide-react';
+import { Receipt, ChevronDown, ChevronUp, Printer, Edit, Share2 } from 'lucide-react';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
+import { db } from '../db/localDb';
+import { shareTicketViaWhatsApp } from '../utils/ticketUtils';
+import CustomerModal from './CustomerModal';
 
 function MySales() {
   const navigate = useNavigate();
@@ -16,6 +19,10 @@ function MySales() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const { user } = useAuth();
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [customerToEdit, setCustomerToEdit] = useState(null);
+  const [allCustomers, setAllCustomers] = useState([]);
+  const [pendingWhatsAppSale, setPendingWhatsAppSale] = useState(null);
 
   useEffect(() => {
     loadSales(currentPage);
@@ -25,6 +32,75 @@ function MySales() {
     socket.on('sales_updated', () => loadSales(currentPage));
     return () => socket.off('sales_updated');
   }, [currentPage]);
+
+  useEffect(() => {
+    const fetchAllCustomers = async () => {
+      try {
+        const customers = await db.customers.toArray();
+        setAllCustomers(customers);
+      } catch (error) {
+        console.error('Error fetching customers:', error);
+      }
+    };
+    fetchAllCustomers();
+  }, []);
+
+  const handleCustomerUpdate = async () => {
+    try {
+      const customers = await db.customers.toArray();
+      setAllCustomers(customers);
+
+      // Si estábamos esperando el teléfono para enviar WhatsApp
+      if (customerToEdit && pendingWhatsAppSale) {
+        const updated = customers.find(c => c.id === customerToEdit.id);
+        if (updated && updated.phone) {
+          // Actualizamos los datos de la venta con el nuevo teléfono antes de enviar
+          const saleToSend = { 
+            ...pendingWhatsAppSale, 
+            customer_phone: updated.phone,
+            seller_name: pendingWhatsAppSale.seller_name || user?.username || 'Vendedor'
+          };
+          await shareTicketViaWhatsApp(saleToSend);
+          setPendingWhatsAppSale(null);
+          
+          // También refrescamos la lista de ventas localmente si es necesario
+          // (Aunque el servidor ya debería tener el cambio si se grabó, 
+          // pero el objeto 'sale' que tenemos podría estar viejo)
+          loadSales(currentPage);
+        }
+      }
+      setCustomerToEdit(null);
+    } catch (error) {
+      console.error('Error in handleCustomerUpdate:', error);
+    }
+  };
+
+  const handleWhatsAppClick = async (sale) => {
+    const customerId = sale.customer_id;
+    const hasPhone = sale.customer_phone;
+    
+    if (!hasPhone && customerId) {
+      const customer = allCustomers.find(c => c.id === customerId);
+      if (customer && !customer.name.toLowerCase().includes('cons. final')) {
+        setCustomerToEdit(customer);
+        setPendingWhatsAppSale(sale);
+        setShowCustomerModal(true);
+        return;
+      }
+    }
+
+    const saleWithSeller = { 
+      ...sale, 
+      seller_name: sale.seller_name || user?.username || 'Vendedor' 
+    };
+
+    try {
+      await shareTicketViaWhatsApp(saleWithSeller);
+    } catch (error) {
+      console.error(error);
+      toast.error('Error al enviar WhatsApp');
+    }
+  };
 
   const loadSales = async (page = 1) => {
     setLoading(true);
@@ -287,12 +363,21 @@ function MySales() {
                             <Printer size={16} className="me-1" />
                             Reimprimir
                           </Button>
+                          <Button
+                            variant="outline-success"
+                            size="sm"
+                            title="Enviar por WhatsApp"
+                            onClick={() => handleWhatsAppClick(sale)}
+                          >
+                            <Share2 size={16} />
+                          </Button>
                           <Button 
                             variant="outline-warning" 
                             size="sm" 
+                            title="Editar Venta"
                             onClick={() => navigate('/ventas', { state: { editSale: sale } })}
                           >
-                            <Edit size={16} className="me-1" /> Editar
+                            <Edit size={16} />
                           </Button>
                         </div>
                       </td>
@@ -404,6 +489,15 @@ function MySales() {
           )}
         </Card.Body>
       </Card>
+      <CustomerModal
+        show={showCustomerModal}
+        handleClose={() => {
+          setShowCustomerModal(false);
+          setPendingWhatsAppSale(null);
+        }}
+        refreshCustomers={handleCustomerUpdate}
+        editCustomer={customerToEdit}
+      />
     </div>
   );
 }
