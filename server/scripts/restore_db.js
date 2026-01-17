@@ -4,7 +4,7 @@ const fs = require("fs");
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\18\\bin";
-const PG_RESTORE = `"${PG_BIN_PATH}\\pg_restore.exe"`;
+const PSQL = `"${PG_BIN_PATH}\\psql.exe"`;
 
 let backupFile = process.argv[2];
 
@@ -25,10 +25,10 @@ const dbPassword = process.env.DB_PASSWORD || "postgres";
 const dbHost = process.env.DB_HOST || "localhost";
 const dbPort = process.env.DB_PORT || 5432;
 
-const command = `set PGPASSWORD=${dbPassword}&& ${PG_RESTORE} -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists --no-owner "${backupFile}"`;
+const command = `set PGPASSWORD=${dbPassword}&& ${PSQL} -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${backupFile}"`;
 
 console.log(
-  `Iniciando restauración de la base de datos '${dbName}' desde '${backupFile}'...`,
+  `Iniciando restauración de la base de datos '${dbName}' desde '${backupFile}' (psql)...`,
 );
 
 exec(command, (error, stdout, stderr) => {

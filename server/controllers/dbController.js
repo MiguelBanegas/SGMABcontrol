@@ -23,10 +23,10 @@ exports.backupDatabase = async (req, res) => {
     const dbPort = process.env.DB_PORT || 5432;
 
     // Comando pg_dump
-    // -O: no owner, -x: no privileges, -f: output file
-    const command = `set PGPASSWORD=${dbPassword}&& ${PG_DUMP} -h ${dbHost} -p ${dbPort} -U ${dbUser} -F c -b -v -f "${filePath}" ${dbName}`;
+    // -O: no owner, -x: no privileges, -f: output file, formato texto plano por defecto
+    const command = `set PGPASSWORD=${dbPassword}&& ${PG_DUMP} -h ${dbHost} -p ${dbPort} -U ${dbUser} -b -v -f "${filePath}" ${dbName}`;
 
-    console.log("Ejecutando respaldo...");
+    console.log("Ejecutando respaldo (texto plano)...");
 
     exec(command, (error, stdout, stderr) => {
       if (error) {
@@ -69,21 +69,17 @@ exports.restoreDatabase = async (req, res) => {
     const dbHost = process.env.DB_HOST || "localhost";
     const dbPort = process.env.DB_PORT || 5432;
 
-    // Comando para restaurar (asumiendo formato custom de pg_dump -F c)
-    // Usamos pg_restore for format custom
-    const PG_RESTORE = `"${PG_BIN_PATH}\\pg_restore.exe"`;
+    // Comando para restaurar usando psql (para archivos de texto plano .sql)
+    const command = `set PGPASSWORD=${dbPassword}&& ${PSQL} -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -f "${filePath}"`;
 
-    // --clean para borrar objetos antes de recrear, --if-exists, --no-owner
-    const command = `set PGPASSWORD=${dbPassword}&& ${PG_RESTORE} -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists --no-owner "${filePath}"`;
-
-    console.log("Iniciando restauración de base de datos...");
+    console.log("Iniciando restauración de base de datos (psql)...");
 
     exec(command, (error, stdout, stderr) => {
       // Eliminar el archivo subido después de procesar
       fs.unlinkSync(filePath);
 
       if (error) {
-        console.error(`Error en pg_restore: ${error.message}`);
+        console.error(`Error en psql: ${error.message}`);
         return res.status(500).json({
           error: "Error al restaurar la base de datos",
           details: error.message,
@@ -93,6 +89,7 @@ exports.restoreDatabase = async (req, res) => {
       console.log("Restauración completada con éxito");
       res.json({ message: "Base de datos restaurada exitosamente" });
     });
+
   } catch (error) {
     console.error("Error en restoreDatabase:", error);
     res.status(500).json({ error: "Error interno del servidor" });
