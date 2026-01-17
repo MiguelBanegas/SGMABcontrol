@@ -74,7 +74,9 @@ app.use("/api/customers", customerRoutes);
 app.use("/api/customer-accounts", customerAccountRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/settings", require("./routes/settingsRoutes"));
+app.use("/api/db", require("./routes/dbRoutes"));
 app.use("/api/print", printRoutes);
+
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/cash-registers", cashRegisterRoutes);
 app.get("/api/health", (req, res) => {

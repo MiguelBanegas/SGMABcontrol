@@ -155,42 +155,41 @@ exports.updateProduct = async (req, res) => {
     is_offer,
   } = req.body;
 
-  // Validación de precios
-  const pBuy =
-    price_buy === "" || price_buy === null
-      ? null
-      : Math.max(0, parseFloat(price_buy));
-  const pSell = Math.max(0, parseFloat(price_sell));
-  const pOffer =
-    price_offer === "" || price_offer === null
-      ? null
-      : Math.max(0, parseFloat(price_offer));
+  // Validación y sanitización de precios y stock
+  const parseNum = (val) => {
+    if (val === "" || val === null || val === undefined || val === "null")
+      return null;
+    const p = parseFloat(val);
+    return isNaN(p) ? null : p;
+  };
+
+  const pBuy = parseNum(price_buy);
+  const pSell = parseNum(price_sell) || 0;
+  const pOffer = parseNum(price_offer);
+  const stockVal = parseNum(stock) || 0;
 
   if (pBuy !== null && pBuy > 10000000) {
     return res.status(400).json({ message: "Precio de compra absurdo" });
   }
-  if (isNaN(pSell) || pSell > 10000000) {
+  if (pSell > 10000000) {
     return res
       .status(400)
       .json({ message: "Precio de venta inválido o absurdo" });
-  }
-  if (pOffer !== null && isNaN(pOffer)) {
-    return res.status(400).json({ message: "Precio de oferta inválido" });
   }
 
   const isOffer = is_offer === "true" || is_offer === true;
 
   const updateData = {
-    name,
+    name: name || "Producto sin nombre",
     description: description || null,
-    sku,
+    sku: sku || "SIN-SKU",
     price_buy: pBuy,
-    price_sell: pSell,
-    stock: stock === "" ? 0 : Math.max(0, parseFloat(stock)),
+    price_sell: Math.max(0, pSell),
+    stock: stockVal,
     sell_by_weight:
       req.body.sell_by_weight === "true" || req.body.sell_by_weight === true,
     category_id:
-      category_id === "" || category_id === "null"
+      category_id === "" || category_id === "null" || category_id === null
         ? null
         : parseInt(category_id),
     price_offer: isOffer ? pOffer : null,
@@ -461,7 +460,7 @@ exports.searchProducts = async (req, res) => {
       .andWhere(function () {
         this.whereRaw("LOWER(products.name) LIKE ?", [searchTerm]).orWhereRaw(
           "LOWER(products.sku) LIKE ?",
-          [searchTerm]
+          [searchTerm],
         );
       })
       .leftJoin("categories", "products.category_id", "categories.id")
@@ -475,7 +474,7 @@ exports.searchProducts = async (req, res) => {
           ELSE 3
         END, LOWER(products.name)
       `,
-        [`${q.toLowerCase()}%`, `${q.toLowerCase()}%`]
+        [`${q.toLowerCase()}%`, `${q.toLowerCase()}%`],
       );
 
     res.json(products);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Form, Button, InputGroup, Alert } from 'react-bootstrap';
-import { Settings as SettingsIcon, Save } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Database, Download, Upload } from 'lucide-react';
+
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
@@ -10,6 +11,10 @@ const Settings = () => {
   const [saving, setSaving] = useState(false);
   const [autoPrint, setAutoPrint] = useState(() => localStorage.getItem('auto_print') === 'true');
   const [printMethod, setPrintMethod] = useState(() => localStorage.getItem('print_method') || 'server');
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+
 
   useEffect(() => {
     loadSettings();
@@ -45,7 +50,68 @@ const Settings = () => {
     }
   };
 
+  const handleBackup = async () => {
+    setBackingUp(true);
+    try {
+      const response = await axios({
+        url: '/api/db/backup',
+        method: 'GET',
+        responseType: 'blob', // importante para tratar la respuesta como archivo
+      });
+
+      // Crear un enlace para descargar el archivo
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      link.setAttribute('download', `sgm_backup_${timestamp}.sql`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast.success('Respaldo generado y descargado con éxito');
+    } catch (error) {
+      console.error('Error al generar respaldo:', error);
+      toast.error('Error al generar respaldo de la base de datos');
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestore = async (e) => {
+    e.preventDefault();
+    if (!selectedFile) {
+      toast.error('Por favor seleccione un archivo de respaldo');
+      return;
+    }
+
+    if (!window.confirm('¿Está seguro de que desea restaurar la base de datos? Esto reemplazará los datos actuales y puede tardar unos momentos.')) {
+      return;
+    }
+
+    setRestoring(true);
+    const formData = new FormData();
+    formData.append('backup', selectedFile);
+
+    try {
+      await axios.post('/api/db/restore', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      toast.success('Base de datos restaurada con éxito. Se recomienda recargar la página.');
+      setSelectedFile(null);
+      // Resetear el input de archivo
+      document.getElementById('restore-file-input').value = '';
+    } catch (error) {
+      console.error('Error al restaurar:', error);
+      toast.error('Error al restaurar la base de datos. Verifique el archivo.');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
   if (loading) {
+
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '400px' }}>
         <div className="spinner-border text-primary" role="status">
@@ -179,7 +245,84 @@ const Settings = () => {
         </Card.Body>
       </Card>
 
+      <Card className="shadow-sm mt-4 border-danger">
+        <Card.Header className="bg-danger text-white d-flex align-items-center">
+          <Database size={20} className="me-2" />
+          <h5 className="mb-0">Mantenimiento de Base de Datos</h5>
+        </Card.Header>
+        <Card.Body>
+          <Alert variant="warning">
+            <strong>⚠️ Atención:</strong> Estas acciones son críticas. Realice un respaldo antes de intentar restaurar.
+          </Alert>
+
+          <div className="row">
+            <div className="col-md-6 mb-4">
+              <h6 className="fw-bold">Generar Copia de Seguridad</h6>
+              <p className="text-muted small">
+                Crea una copia completa de la base de datos actual. 
+                El archivo descargado podrá ser usado para restaurar el sistema en caso de fallas.
+              </p>
+              <Button 
+                variant="outline-primary" 
+                onClick={handleBackup}
+                disabled={backingUp}
+                className="w-100 py-3"
+              >
+                {backingUp ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-2" />
+                    Generando Respaldo...
+                  </>
+                ) : (
+                  <>
+                    <Download size={20} className="me-2" />
+                    Descargar Respaldo (SQL)
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="col-md-6 mb-4">
+              <h6 className="fw-bold">Restaurar Base de Datos</h6>
+              <p className="text-muted small">
+                Sube un archivo de respaldo previamente generado (.sql) para sobrescribir la base de datos actual.
+              </p>
+              <Form onSubmit={handleRestore}>
+                <Form.Group className="mb-3">
+                  <Form.Control 
+                    type="file" 
+                    id="restore-file-input"
+                    accept=".sql,.backup"
+                    onChange={(e) => setSelectedFile(e.target.files[0])}
+                    disabled={restoring}
+                  />
+                </Form.Group>
+                <Button 
+                  variant="danger" 
+                  type="submit"
+                  disabled={restoring || !selectedFile}
+                  className="w-100 py-3"
+                >
+                  {restoring ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2" />
+                      Restaurando Sistema...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={20} className="me-2" />
+                      Iniciar Restauración
+                    </>
+                  )}
+                </Button>
+              </Form>
+            </div>
+          </div>
+        </Card.Body>
+      </Card>
+
       <Card className="shadow-sm mt-4">
+
         <Card.Header className="bg-secondary text-white">
           <h5 className="mb-0">Información Adicional</h5>
         </Card.Header>

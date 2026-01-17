@@ -117,11 +117,23 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
       setIsAdjusting(true);
       const data = new FormData();
       data.append('image', image);
-      // Backend expects other fields as well for PUT /products/:id
+      
+      // Enviar todos los campos necesarios para evitar errores en el servidor
       data.append('name', product.name);
       data.append('sku', product.sku);
+      data.append('description', product.description || '');
+      data.append('price_buy', product.price_buy || '');
       data.append('price_sell', product.price_sell);
       data.append('stock', product.stock);
+      data.append('category_id', product.category_id || '');
+      data.append('price_offer', product.price_offer || '');
+      data.append('is_offer', !!product.is_offer);
+      data.append('sell_by_weight', !!product.sell_by_weight);
+      
+      // Opcionales de promociones si existen
+      if (product.promo_buy) data.append('promo_buy', product.promo_buy);
+      if (product.promo_pay) data.append('promo_pay', product.promo_pay);
+      if (product.promo_type) data.append('promo_type', product.promo_type);
 
       await axios.put(`${getApiUrl()}/products/${product.id}`, data, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -129,6 +141,7 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
       toast.success('Imagen actualizada');
       setIsEditingImage(false);
     } catch (err) {
+      console.error('Error uploading image:', err);
       toast.error('Error al subir imagen');
     } finally {
       setIsAdjusting(false);
@@ -248,13 +261,13 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
               <label className="text-muted small d-block mb-0">Stock Actualmente</label>
-              <span className="fs-2 fw-bold text-dark">{displayStock}<small className="ms-1 text-muted fs-6">{product.sell_by_weight ? 'kg' : 'unid.'}</small></span>
+              <span className="fs-2 fw-bold text-dark">{displayStock.toFixed(2)}<small className="ms-1 text-muted fs-6">{product.sell_by_weight ? 'kg' : 'unid.'}</small></span>
             </div>
             <div className="text-end">
               <label className="text-primary small d-block mb-0 fw-bold">{product.is_offer ? 'Oferta' : 'Venta'}</label>
-              {product.is_offer && <div className="text-muted extra-small text-decoration-line-through">${product.price_sell}</div>}
+              {product.is_offer && <div className="text-muted extra-small text-decoration-line-through">${Number(product.price_sell).toFixed(2)}</div>}
               <span className={`fs-3 fw-bold ${product.is_offer ? 'text-success' : 'text-primary'}`}>
-                ${product.is_offer ? product.price_offer : product.price_sell}
+                ${Number(product.is_offer ? product.price_offer : product.price_sell).toFixed(2)}
               </span>
             </div>
           </div>
@@ -335,7 +348,7 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
               </Row>
             ) : (
               <div className="d-flex justify-content-between small">
-                <div><span className="text-muted">Costo: </span><span className="fw-bold">${product.price_buy || '0.00'}</span></div>
+                <div><span className="text-muted">Costo: </span><span className="fw-bold">${Number(product.price_buy || 0).toFixed(2)}</span></div>
                 <div><span className="text-muted">Categoría: </span><span className="fw-bold text-dark">{product.category_name || 'N/A'}</span></div>
               </div>
             )}

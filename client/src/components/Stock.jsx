@@ -19,6 +19,8 @@ const Stock = () => {
   const [showScanner, setShowScanner] = useState(false);
   const { user } = useAuth();
   const searchInputRef = useRef(null);
+  const searchTimeoutRef = useRef(null);
+  const searchResultsRef = useRef(null);
   const isAdmin = user?.role === 'admin';
 
   const fetchProducts = async () => {

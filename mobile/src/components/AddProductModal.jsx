@@ -291,7 +291,7 @@ const AddProductModal = ({ show, handleClose, initialSku = '', refreshProducts }
                 />
                 {formData.price_buy && (
                   <div className="extra-small text-muted mt-1">
-                    Sugerido (+20%): ${(parseFloat(formData.price_buy) * 1.20).toFixed(2)}
+                    Sugerido (+20%): ${Number(formData.price_buy * 1.20).toFixed(2)}
                   </div>
                 )}
               </Form.Group>
