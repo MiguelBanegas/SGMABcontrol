@@ -3,7 +3,7 @@ const path = require("path");
 const fs = require("fs");
 require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
-const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\10\\bin";
+const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\18\\bin";
 const PG_RESTORE = `"${PG_BIN_PATH}\\pg_restore.exe"`;
 
 let backupFile = process.argv[2];
