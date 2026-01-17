@@ -50,3 +50,6 @@ server/spooler/temp/*.html
 temp_sqlite/
 server/product_record.json
 start-ngrok.bat
+
+# SQL Backups
+*.sql
