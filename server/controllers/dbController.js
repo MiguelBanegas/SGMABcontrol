@@ -4,7 +4,7 @@ const fs = require("fs");
 require("dotenv").config();
 
 // Ruta a las herramientas de PostgreSQL
-const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\18\\bin";
+const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\10\\bin";
 const PG_DUMP = `"${PG_BIN_PATH}\\pg_dump.exe"`;
 const PSQL = `"${PG_BIN_PATH}\\psql.exe"`;
 
@@ -70,7 +70,7 @@ exports.restoreDatabase = async (req, res) => {
     const dbPort = process.env.DB_PORT || 5432;
 
     // Comando para restaurar (asumiendo formato custom de pg_dump -F c)
-    // Usamos pg_restore para el formato custom
+    // Usamos pg_restore for format custom
     const PG_RESTORE = `"${PG_BIN_PATH}\\pg_restore.exe"`;
 
     // --clean para borrar objetos antes de recrear, --if-exists, --no-owner
