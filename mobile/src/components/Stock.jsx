@@ -424,16 +424,17 @@ const Stock = () => {
                            {product.is_offer && <Badge bg="danger" className="extra-small py-0">OFERTA</Badge>}
                         </div>
                         <div className="text-end ms-2">
-                           {product.is_offer && <div className="text-muted extra-small text-decoration-line-through" style={{ fontSize: '0.6rem' }}>${product.price_sell}</div>}
+                           {product.is_offer && <div className="text-muted extra-small text-decoration-line-through" style={{ fontSize: '0.6rem' }}>${Number(product.price_sell).toFixed(2)}</div>}
                            <span className={`fw-bold small ${product.is_offer ? 'text-success' : 'text-primary'}`}>
-                             ${product.is_offer ? product.price_offer : product.price_sell}
+                             ${Number(product.is_offer ? product.price_offer : product.price_sell).toFixed(2)}
                            </span>
                         </div>
                       </div>
                       <div className="d-flex justify-content-between align-items-center mt-1">
+
                         <small className="text-muted extra-small">{product.sku}</small>
                         <Badge bg={product.stock <= 0 ? 'danger' : (product.stock < 5 ? 'warning' : 'light')} className={`extra-small ${product.stock < 5 && product.stock > 0 ? 'text-dark' : (product.stock >= 5 ? 'text-dark border' : '')}`}>
-                          {product.stock} {product.sell_by_weight ? 'kg' : 'uds.'}
+                          {Number(product.stock).toFixed(2)} {product.sell_by_weight ? 'kg' : 'uds.'}
                         </Badge>
                       </div>
                       {product.category_name && (
