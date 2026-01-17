@@ -4,7 +4,7 @@ const fs = require("fs");
 require("dotenv").config();
 
 // Ruta a las herramientas de PostgreSQL
-const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\10\\bin";
+const PG_BIN_PATH = "C:\\Program Files\\PostgreSQL\\18\\bin";
 const PG_DUMP = `"${PG_BIN_PATH}\\pg_dump.exe"`;
 const PSQL = `"${PG_BIN_PATH}\\psql.exe"`;
 
