@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card, Form, Button, Row, Col, InputGroup, ListGroup, Badge } from 'react-bootstrap';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Search, TrendingUp, DollarSign, Package, Calendar } from 'lucide-react';
+import { Search, TrendingUp, DollarSign, Package, Calendar, BarChart3 } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import ProductEvolutionHistory from './ProductEvolutionHistory';
 
 const ProductSalesAnalytics = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -13,6 +14,7 @@ const ProductSalesAnalytics = () => {
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showEvolution, setShowEvolution] = useState(false);
   
   const searchInputRef = useRef(null);
   const searchResultsRef = useRef(null);
@@ -57,6 +59,7 @@ const ProductSalesAnalytics = () => {
       const response = await axios.get(`/api/sales/product-stats/${productId}?days=${period}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      console.log('Product stats response:', response.data);
       setData(response.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -183,7 +186,7 @@ const ProductSalesAnalytics = () => {
       )}
 
       {/* Métricas */}
-      {data && (
+      {data && data.stats && (
         <>
           <Row className="mb-4">
             <Col md={4}>
@@ -192,7 +195,7 @@ const ProductSalesAnalytics = () => {
                   <div className="d-flex align-items-center justify-content-between">
                     <div>
                       <small className="opacity-75">Total Vendido</small>
-                      <h3 className="mb-0">{data.stats.totalQuantity.toFixed(2)}</h3>
+                      <h3 className="mb-0">{(data.stats.totalQuantity || 0).toFixed(2)}</h3>
                       <small>unidades</small>
                     </div>
                     <Package size={40} className="opacity-50" />
@@ -206,7 +209,7 @@ const ProductSalesAnalytics = () => {
                   <div className="d-flex align-items-center justify-content-between">
                     <div>
                       <small className="opacity-75">Ingresos Totales</small>
-                      <h3 className="mb-0">${data.stats.totalRevenue.toFixed(2)}</h3>
+                      <h3 className="mb-0">${(data.stats.totalRevenue || 0).toFixed(2)}</h3>
                       <small>en {days} días</small>
                     </div>
                     <DollarSign size={40} className="opacity-50" />
@@ -220,7 +223,7 @@ const ProductSalesAnalytics = () => {
                   <div className="d-flex align-items-center justify-content-between">
                     <div>
                       <small className="opacity-75">Promedio Diario</small>
-                      <h3 className="mb-0">{data.stats.averageDaily.toFixed(2)}</h3>
+                      <h3 className="mb-0">{(data.stats.averageDaily || 0).toFixed(2)}</h3>
                       <small>unidades/día</small>
                     </div>
                     <TrendingUp size={40} className="opacity-50" />
@@ -233,8 +236,18 @@ const ProductSalesAnalytics = () => {
           {/* Gráfico */}
           <Card className="shadow-sm">
             <Card.Body>
-              <h5 className="mb-4">📈 Evolución de Ventas - {data.product.name}</h5>
-              {data.timeline.length > 0 ? (
+              <div className="d-flex justify-content-between align-items-center mb-4">
+                <h5 className="mb-0">📈 Evolución de Ventas - {data.product?.name || 'Producto'}</h5>
+                <Button 
+                  variant="primary" 
+                  size="sm"
+                  onClick={() => setShowEvolution(true)}
+                >
+                  <BarChart3 size={16} className="me-1" />
+                  Ver Historial Completo
+                </Button>
+              </div>
+              {data.timeline && data.timeline.length > 0 ? (
                 <ResponsiveContainer width="100%" height={400}>
                   <LineChart data={data.timeline}>
                     <CartesianGrid strokeDasharray="3 3" />
@@ -299,6 +312,13 @@ const ProductSalesAnalytics = () => {
           </Card.Body>
         </Card>
       )}
+
+      {/* Modal de Historial de Evolución */}
+      <ProductEvolutionHistory 
+        show={showEvolution}
+        onHide={() => setShowEvolution(false)}
+        product={selectedProduct}
+      />
     </div>
   );
 };

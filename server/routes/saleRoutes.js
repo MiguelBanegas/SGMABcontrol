@@ -8,20 +8,25 @@ router.get("/stats", verifyToken, isAdmin, saleController.getSalesStats);
 router.get(
   "/product-stats/:productId",
   verifyToken,
-  saleController.getProductSalesStats
+  saleController.getProductSalesStats,
+);
+router.get(
+  "/product-evolution/:productId",
+  verifyToken,
+  saleController.getProductEvolutionHistory,
 );
 router.get(
   "/products-report",
   verifyToken,
   isAdmin,
-  saleController.getProductsReport
+  saleController.getProductsReport,
 );
 router.get("/history", verifyToken, isAdmin, saleController.getSalesHistory);
 router.patch(
   "/:id/status",
   verifyToken,
   isAdmin,
-  saleController.toggleSaleStatus
+  saleController.toggleSaleStatus,
 );
 
 // Rutas para ventas en progreso (sistema antiguo - una sola venta)
@@ -34,22 +39,22 @@ const pendingSalesController = require("../controllers/pendingSalesController");
 router.get(
   "/pending-multiple",
   verifyToken,
-  pendingSalesController.getAllPendingSales
+  pendingSalesController.getAllPendingSales,
 );
 router.post(
   "/pending-multiple",
   verifyToken,
-  pendingSalesController.createPendingSale
+  pendingSalesController.createPendingSale,
 );
 router.put(
   "/pending-multiple/:id",
   verifyToken,
-  pendingSalesController.updatePendingSale
+  pendingSalesController.updatePendingSale,
 );
 router.delete(
   "/pending-multiple/:id",
   verifyToken,
-  pendingSalesController.deletePendingSale
+  pendingSalesController.deletePendingSale,
 );
 
 // Ruta para obtener ventas del vendedor

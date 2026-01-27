@@ -103,7 +103,7 @@ exports.createSale = async (req, res) => {
       // Calcular descuento (diferencia entre precio normal y precio efectivo)
       const discount = Math.max(
         0,
-        (product.price_sell - effectiveUnitPrice) * item.quantity
+        (product.price_sell - effectiveUnitPrice) * item.quantity,
       );
 
       saleItems.push({
@@ -207,7 +207,7 @@ exports.createSale = async (req, res) => {
             amount: total,
             balance: currentBalance,
             description: `Venta #${id.substring(0, 8)} (Total: $${total.toFixed(
-              2
+              2,
             )})`,
             business_id: req.user.business_id,
           });
@@ -233,7 +233,7 @@ exports.createSale = async (req, res) => {
             "creditAvailable=",
             creditAvailable,
             "currentBalance=",
-            currentBalance
+            currentBalance,
           );
           let creditUsed = 0;
 
@@ -245,7 +245,7 @@ exports.createSale = async (req, res) => {
               "DEBUG: Applying credit. creditUsed=",
               creditUsed,
               "new currentBalance=",
-              currentBalance
+              currentBalance,
             );
 
             await trx("customer_account_transactions").insert({
@@ -274,7 +274,7 @@ exports.createSale = async (req, res) => {
               "DEBUG: Credit covered all debt. creditUsed=",
               creditUsed,
               "remaining credit=",
-              Math.abs(currentBalance)
+              Math.abs(currentBalance),
             );
 
             await trx("customer_account_transactions").insert({
@@ -307,22 +307,72 @@ exports.createSale = async (req, res) => {
 
           console.log(
             "Traceability split transactions recorded successfully. Final Customer Balance:",
-            currentBalance
+            currentBalance,
           );
         } else {
           // Venta pagada completamente en efectivo, no hay deuda
           console.log(
-            "Sale fully paid in cash, no customer account transactions needed."
+            "Sale fully paid in cash, no customer account transactions needed.",
           );
         }
       }
     }
 
-    // Actualizar stock
+    // Actualizar stock y gestionar envases
     for (const item of items) {
+      const product = await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .first();
+
+      // 1. Decrementar stock
       await trx("products")
         .where({ id: item.product_id, business_id: req.user.business_id })
         .decrement("stock", item.quantity);
+
+      // 2. Si es envase y hay cliente, registrar préstamo
+      if (product.is_container && customer_id) {
+        // Buscar balance actual
+        const currentBalanceRec = await trx("container_balances")
+          .where({
+            customer_id: customer_id,
+            product_id: item.product_id,
+            business_id: req.user.business_id,
+          })
+          .first();
+
+        const currentBalance = currentBalanceRec
+          ? parseFloat(currentBalanceRec.balance)
+          : 0;
+        const newBalance = currentBalance + parseFloat(item.quantity);
+
+        if (currentBalanceRec) {
+          await trx("container_balances")
+            .where({ id: currentBalanceRec.id })
+            .update({
+              balance: newBalance,
+              updated_at: trx.fn.now(),
+            });
+        } else {
+          await trx("container_balances").insert({
+            customer_id: customer_id,
+            product_id: item.product_id,
+            balance: newBalance,
+            business_id: req.user.business_id,
+          });
+        }
+
+        // Registrar transacción de préstamo
+        await trx("container_transactions").insert({
+          customer_id: customer_id,
+          product_id: item.product_id,
+          sale_id: id,
+          type: "loan",
+          amount: parseFloat(item.quantity),
+          balance_after: newBalance,
+          description: `Préstamo en Venta #${id.substring(0, 8)}`,
+          business_id: req.user.business_id,
+        });
+      }
     }
 
     await trx.commit();
@@ -368,7 +418,7 @@ exports.getSalesStats = async (req, res) => {
       .where({ business_id: req.user.business_id })
       .select(
         db.raw("DATE(created_at) as date"),
-        db.raw("SUM(total)::FLOAT as total_day")
+        db.raw("SUM(total)::FLOAT as total_day"),
       )
       .groupBy("date")
       .orderBy("date", "desc")
@@ -383,8 +433,8 @@ exports.getSalesStats = async (req, res) => {
           .andWhere("sales.business_id", req.user.business_id)
           .select(
             db.raw(
-              "SUM(sale_items.quantity * COALESCE(sale_items.cost_at_sale, 0))::FLOAT as total_cost"
-            )
+              "SUM(sale_items.quantity * COALESCE(sale_items.cost_at_sale, 0))::FLOAT as total_cost",
+            ),
           )
           .first();
 
@@ -394,7 +444,7 @@ exports.getSalesStats = async (req, res) => {
           total_day: dayStat.total_day,
           profit_day: dayStat.total_day - totalCost,
         };
-      })
+      }),
     );
 
     res.json(stats);
@@ -414,7 +464,7 @@ exports.getSalesHistory = async (req, res) => {
         "sales.*",
         "users.username as seller_name",
         "customers.name as customer_name",
-        "customers.phone as customer_phone"
+        "customers.phone as customer_phone",
       )
       .orderBy("sales.created_at", "desc");
 
@@ -427,10 +477,10 @@ exports.getSalesHistory = async (req, res) => {
             "sale_items.*",
             "products.name as product_name",
             "products.sku",
-            "products.image_url"
+            "products.image_url",
           );
         return { ...sale, items };
-      })
+      }),
     );
 
     res.json(history);
@@ -573,7 +623,7 @@ exports.getMySales = async (req, res) => {
         "sales.*",
         "customers.name as customer_name",
         "customers.phone as customer_phone",
-        "users.username as seller_name"
+        "users.username as seller_name",
       )
       .orderBy("sales.created_at", "desc")
       .limit(perPage)
@@ -588,10 +638,10 @@ exports.getMySales = async (req, res) => {
             "sale_items.*",
             "products.name as product_name",
             "products.sku",
-            "products.image_url"
+            "products.image_url",
           );
         return { ...sale, items };
-      })
+      }),
     );
 
     res.json({
@@ -622,7 +672,7 @@ exports.getSaleDetail = async (req, res) => {
         "sales.*",
         "customers.name as customer_name",
         "customers.phone as customer_phone",
-        "users.username as seller_name"
+        "users.username as seller_name",
       )
       .first();
 
@@ -637,7 +687,7 @@ exports.getSaleDetail = async (req, res) => {
         "sale_items.*",
         "products.name as product_name",
         "products.sku",
-        "products.image_url"
+        "products.image_url",
       );
 
     res.json({ ...sale, items });
@@ -675,7 +725,7 @@ exports.getProductSalesStats = async (req, res) => {
       .select(
         db.raw("DATE(sales.created_at) as date"),
         db.raw("SUM(sale_items.quantity)::FLOAT as quantity"),
-        db.raw("SUM(sale_items.subtotal)::FLOAT as revenue")
+        db.raw("SUM(sale_items.subtotal)::FLOAT as revenue"),
       )
       .groupBy(db.raw("DATE(sales.created_at)"))
       .orderBy("date", "asc");
@@ -683,11 +733,11 @@ exports.getProductSalesStats = async (req, res) => {
     // Calcular estadísticas
     const totalQuantity = timeline.reduce(
       (sum, day) => sum + parseFloat(day.quantity || 0),
-      0
+      0,
     );
     const totalRevenue = timeline.reduce(
       (sum, day) => sum + parseFloat(day.revenue || 0),
-      0
+      0,
     );
     const averageDaily = totalQuantity / parseInt(days);
 
@@ -737,7 +787,7 @@ exports.getProductsReport = async (req, res) => {
         "products.name as product_name",
         "products.sku",
         db.raw("SUM(sale_items.quantity)::FLOAT as total_quantity"),
-        db.raw("SUM(sale_items.subtotal)::FLOAT as total_revenue")
+        db.raw("SUM(sale_items.subtotal)::FLOAT as total_revenue"),
       )
       .groupBy("products.id", "products.name", "products.sku")
       .orderBy("total_quantity", "desc");
@@ -854,7 +904,7 @@ exports.updateSale = async (req, res) => {
       subtotal += itemTotal;
       const discount = Math.max(
         0,
-        (product.price_sell - effectiveUnitPrice) * item.quantity
+        (product.price_sell - effectiveUnitPrice) * item.quantity,
       );
 
       newSaleItems.push({
@@ -1084,5 +1134,182 @@ exports.updateSale = async (req, res) => {
     res
       .status(500)
       .json({ message: "Error al actualizar la venta", error: error.message });
+  }
+};
+
+// Obtener historial de evolución de ventas y precios de un producto
+exports.getProductEvolutionHistory = async (req, res) => {
+  const { productId } = req.params;
+  const { days = 90, period = "day" } = req.query;
+
+  try {
+    // Obtener producto
+    const product = await db("products")
+      .where({ id: productId, business_id: req.user.business_id })
+      .first();
+
+    if (!product) {
+      return res.status(404).json({ message: "Producto no encontrado" });
+    }
+
+    // Calcular fecha de inicio
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - parseInt(days));
+
+    // Determinar formato de agrupación según el período
+    let dateFormat;
+    switch (period) {
+      case "week":
+        dateFormat = "DATE_TRUNC('week', sales.created_at)";
+        break;
+      case "month":
+        dateFormat = "DATE_TRUNC('month', sales.created_at)";
+        break;
+      default: // 'day'
+        dateFormat = "DATE(sales.created_at)";
+    }
+
+    // Obtener evolución de ventas agrupadas por período
+    const salesEvolution = await db("sale_items")
+      .join("sales", "sale_items.sale_id", "sales.id")
+      .where("sale_items.product_id", productId)
+      .where("sales.business_id", req.user.business_id)
+      .where("sales.created_at", ">=", startDate)
+      .select(
+        db.raw(`${dateFormat} as period`),
+        db.raw("SUM(sale_items.quantity)::FLOAT as quantity"),
+        db.raw("SUM(sale_items.subtotal)::FLOAT as revenue"),
+        db.raw("AVG(sale_items.price_unit)::FLOAT as avg_price"),
+        db.raw("MIN(sale_items.price_unit)::FLOAT as min_price"),
+        db.raw("MAX(sale_items.price_unit)::FLOAT as max_price"),
+        db.raw("COUNT(DISTINCT sales.id) as sales_count"),
+      )
+      .groupBy(db.raw(dateFormat))
+      .orderBy("period", "asc");
+
+    // Obtener historial de cambios de precio (detectados a través de price_unit)
+    const priceHistory = await db("sale_items")
+      .join("sales", "sale_items.sale_id", "sales.id")
+      .where("sale_items.product_id", productId)
+      .where("sales.business_id", req.user.business_id)
+      .where("sales.created_at", ">=", startDate)
+      .select(
+        db.raw("DATE(sales.created_at) as date"),
+        db.raw("sale_items.price_unit::FLOAT as price"),
+        "sales.created_at",
+      )
+      .orderBy("sales.created_at", "asc");
+
+    // Detectar cambios significativos de precio (más de 0.01 de diferencia)
+    const priceChanges = [];
+    let lastPrice = null;
+
+    for (const record of priceHistory) {
+      const currentPrice = parseFloat(record.price);
+      if (lastPrice === null || Math.abs(currentPrice - lastPrice) > 0.01) {
+        priceChanges.push({
+          date: record.date,
+          price: currentPrice,
+          change: lastPrice
+            ? ((currentPrice - lastPrice) / lastPrice) * 100
+            : 0,
+        });
+        lastPrice = currentPrice;
+      }
+    }
+
+    // Calcular estadísticas generales
+    const totalQuantity = salesEvolution.reduce(
+      (sum, period) => sum + parseFloat(period.quantity || 0),
+      0,
+    );
+    const totalRevenue = salesEvolution.reduce(
+      (sum, period) => sum + parseFloat(period.revenue || 0),
+      0,
+    );
+    const totalSales = salesEvolution.reduce(
+      (sum, period) => sum + parseInt(period.sales_count || 0),
+      0,
+    );
+
+    // Calcular precio promedio ponderado
+    const weightedAvgPrice =
+      totalQuantity > 0 ? totalRevenue / totalQuantity : 0;
+
+    // Obtener precio actual y primer precio
+    const currentPrice = parseFloat(product.price_sell);
+    const firstPrice =
+      priceChanges.length > 0 ? priceChanges[0].price : currentPrice;
+    const priceIncrease =
+      firstPrice > 0 ? ((currentPrice - firstPrice) / firstPrice) * 100 : 0;
+
+    // Calcular tendencia de ventas (comparar primera mitad vs segunda mitad)
+    const midPoint = Math.floor(salesEvolution.length / 2);
+    const firstHalf = salesEvolution.slice(0, midPoint);
+    const secondHalf = salesEvolution.slice(midPoint);
+
+    const firstHalfAvg =
+      firstHalf.length > 0
+        ? firstHalf.reduce((sum, p) => sum + parseFloat(p.quantity || 0), 0) /
+          firstHalf.length
+        : 0;
+    const secondHalfAvg =
+      secondHalf.length > 0
+        ? secondHalf.reduce((sum, p) => sum + parseFloat(p.quantity || 0), 0) /
+          secondHalf.length
+        : 0;
+
+    const salesTrend =
+      firstHalfAvg > 0
+        ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
+        : 0;
+
+    // Obtener precio mínimo y máximo histórico
+    const allPrices = priceHistory.map((p) => parseFloat(p.price));
+    const minHistoricalPrice =
+      allPrices.length > 0 ? Math.min(...allPrices) : currentPrice;
+    const maxHistoricalPrice =
+      allPrices.length > 0 ? Math.max(...allPrices) : currentPrice;
+
+    res.json({
+      product: {
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        current_price: parseFloat(product.price_sell),
+        image_url: product.image_url,
+      },
+      stats: {
+        totalQuantity: parseFloat(totalQuantity.toFixed(2)),
+        totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+        totalSales,
+        averageDaily: parseFloat((totalQuantity / parseInt(days)).toFixed(2)),
+        weightedAvgPrice: parseFloat(weightedAvgPrice.toFixed(2)),
+        days: parseInt(days),
+        period,
+      },
+      priceStats: {
+        currentPrice: parseFloat(currentPrice.toFixed(2)),
+        firstPrice: parseFloat(firstPrice.toFixed(2)),
+        minHistoricalPrice: parseFloat(minHistoricalPrice.toFixed(2)),
+        maxHistoricalPrice: parseFloat(maxHistoricalPrice.toFixed(2)),
+        priceIncrease: parseFloat(priceIncrease.toFixed(2)),
+        priceChangesCount: priceChanges.length,
+      },
+      trends: {
+        salesTrend: parseFloat(salesTrend.toFixed(2)),
+        trendDirection:
+          salesTrend > 5 ? "growing" : salesTrend < -5 ? "declining" : "stable",
+      },
+      salesEvolution,
+      priceChanges,
+    });
+  } catch (error) {
+    console.error("Error en getProductEvolutionHistory:", error);
+    res
+      .status(500)
+      .json({
+        message: "Error al obtener historial de evolución del producto",
+      });
   }
 };
