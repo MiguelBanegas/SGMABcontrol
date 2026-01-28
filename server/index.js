@@ -66,6 +66,8 @@ app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+const containerRoutes = require("./routes/containerRoutes");
+
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/sales", saleRoutes);
@@ -75,12 +77,17 @@ app.use("/api/customer-accounts", customerAccountRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/settings", require("./routes/settingsRoutes"));
 app.use("/api/db", require("./routes/dbRoutes"));
+app.use("/api/migration", require("./routes/migrationRoutes"));
 app.use("/api/print", printRoutes);
+app.use("/api/containers", containerRoutes);
 
 app.use("/api/purchases", purchaseRoutes);
 app.use("/api/cash-registers", cashRegisterRoutes);
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "SGM Backend is running with Socket.io" });
+  res.json({
+    status: "ok",
+    message: "MAR FRANK Backend is running with Socket.io",
+  });
 });
 
 // Endpoint para auto-descubrimiento en redes sin mDNS

@@ -97,8 +97,10 @@ const ProductEvolutionHistory = ({ show, onHide, product }) => {
 
   const priceChartData = data?.priceChanges?.map(item => ({
     date: formatDate(item.date),
-    price: parseFloat(item.price || 0),
-    change: parseFloat(item.change || 0)
+    priceSell: parseFloat(item.price_sell || 0),
+    priceCost: parseFloat(item.price_cost || 0),
+    sellChange: parseFloat(item.sell_change || 0),
+    costChange: parseFloat(item.cost_change || 0)
   })) || [];
 
   return (
@@ -206,27 +208,27 @@ const ProductEvolutionHistory = ({ show, onHide, product }) => {
               </Card.Header>
               <Card.Body>
                 <Row>
-                  <Col md={3}>
+                  <Col md={4}>
                     <div className="text-center">
-                      <small className="text-muted">Precio Actual</small>
+                      <small className="text-muted">Precio Venta Actual</small>
                       <h5 className="text-primary">{formatCurrency(data.priceStats.currentPrice)}</h5>
+                      <small className="text-muted">Precio Costo Actual</small>
+                      <h6 className="text-secondary">{formatCurrency(data.priceStats.currentCost)}</h6>
                     </div>
                   </Col>
-                  <Col md={3}>
+                  <Col md={4}>
                     <div className="text-center">
-                      <small className="text-muted">Precio Inicial</small>
-                      <h5>{formatCurrency(data.priceStats.firstPrice)}</h5>
-                    </div>
-                  </Col>
-                  <Col md={3}>
-                    <div className="text-center">
-                      <small className="text-muted">Rango Histórico</small>
+                      <small className="text-muted">Rango Histórico Venta</small>
                       <h6>
-                        {formatCurrency(data.priceStats.minHistoricalPrice)} - {formatCurrency(data.priceStats.maxHistoricalPrice)}
+                        {formatCurrency(data.priceStats.minHistoricalPriceSell)} - {formatCurrency(data.priceStats.maxHistoricalPriceSell)}
+                      </h6>
+                      <small className="text-muted">Rango Histórico Costo</small>
+                      <h6 className="text-secondary">
+                        {formatCurrency(data.priceStats.minHistoricalPriceCost)} - {formatCurrency(data.priceStats.maxHistoricalPriceCost)}
                       </h6>
                     </div>
                   </Col>
-                  <Col md={3}>
+                  <Col md={4}>
                     <div className="text-center">
                       <small className="text-muted">Incremento Total</small>
                       <h5 className={data.priceStats.priceIncrease >= 0 ? 'text-success' : 'text-danger'}>
@@ -285,7 +287,7 @@ const ProductEvolutionHistory = ({ show, onHide, product }) => {
             </Card>
 
             {/* Gráfico de Evolución de Precios */}
-            {priceChartData.length > 1 && (
+            {priceChartData.length >= 1 && (
               <Card className="mb-4">
                 <Card.Header>
                   <h5 className="mb-0">Historial de Cambios de Precio</h5>
@@ -300,10 +302,18 @@ const ProductEvolutionHistory = ({ show, onHide, product }) => {
                       <Legend />
                       <Line 
                         type="stepAfter" 
-                        dataKey="price" 
+                        dataKey="priceSell" 
                         stroke="#fd7e14" 
                         strokeWidth={2}
                         name="Precio de Venta"
+                        dot={{ r: 5 }}
+                      />
+                      <Line 
+                        type="stepAfter" 
+                        dataKey="priceCost" 
+                        stroke="#0d6efd" 
+                        strokeWidth={2}
+                        name="Precio de Costo"
                         dot={{ r: 5 }}
                       />
                     </LineChart>

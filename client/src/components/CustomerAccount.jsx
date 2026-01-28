@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, ListGroup, Form, Button, Badge, InputGroup, Table, Alert } from 'react-bootstrap';
-import { CreditCard, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Printer, X, CheckCircle } from 'lucide-react';
+import { CreditCard, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Printer, X, CheckCircle, Package, History, RefreshCcw } from 'lucide-react';
+import { Tabs, Tab } from 'react-bootstrap';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -20,6 +21,11 @@ const CustomerAccount = () => {
   const [selectedDebts, setSelectedDebts] = useState([]); // Array of sale_ids
   const [selectedTransactionForPayment, setSelectedTransactionForPayment] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('Efectivo');
+  const [activeTab, setActiveTab] = useState('account');
+  const [containerBalances, setContainerBalances] = useState([]);
+  const [containerHistory, setContainerHistory] = useState([]);
+  const [returnAmount, setReturnAmount] = useState('');
+  const [selectedContainer, setSelectedContainer] = useState(null);
 
   useEffect(() => {
     fetchCustomers();
@@ -49,9 +55,51 @@ const CustomerAccount = () => {
       setBalance(response.data.balance);
       setSelectedCustomer(response.data.customer);
       setSelectedDebts([]); // Reset selection when changing customer
+      fetchContainerData(customerId);
     } catch (error) {
       console.error('Error al cargar transacciones:', error);
       toast.error('Error al cargar transacciones');
+    }
+  };
+
+  const fetchContainerData = async (customerId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const [balancesRes, historyRes] = await Promise.all([
+        axios.get(`/api/containers/customer/${customerId}/balances`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`/api/containers/customer/${customerId}/history`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+      setContainerBalances(balancesRes.data);
+      setContainerHistory(historyRes.data);
+    } catch (error) {
+      console.error('Error al cargar datos de envases:', error);
+    }
+  };
+
+  const handleRecordReturn = async (e) => {
+    e.preventDefault();
+    if (!selectedContainer || !returnAmount || parseFloat(returnAmount) <= 0) {
+      toast.error('Ingrese una cantidad válida');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(`/api/containers/return/${selectedCustomer.id}`, {
+        productId: selectedContainer.product_id,
+        amount: parseFloat(returnAmount),
+        description: 'Devolución manual en mostrador'
+      }, { headers: { Authorization: `Bearer ${token}` } });
+
+      toast.success('Devolución registrada');
+      setReturnAmount('');
+      setSelectedContainer(null);
+      fetchContainerData(selectedCustomer.id);
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Error al registrar devolución');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -310,7 +358,14 @@ const CustomerAccount = () => {
                 </Card.Body>
               </Card>
 
-              <Card id="payment-form-card" className="shadow-sm mb-3">
+              <Tabs
+                activeKey={activeTab}
+                onSelect={(k) => setActiveTab(k)}
+                className="mb-3 custom-tabs"
+                justify
+              >
+                <Tab eventKey="account" title={<span><DollarSign size={18} className="me-1"/>Cuenta Pesos</span>}>
+                  <Card id="payment-form-card" className="shadow-sm mb-3">
                 <Card.Header className="bg-success text-white">
                   <h5 className="mb-0">
                     <DollarSign size={20} className="me-2" />
@@ -619,7 +674,115 @@ const CustomerAccount = () => {
                     </div>
                   )}
                 </Card.Body>
-              </Card>
+                  </Card>
+                </Tab>
+
+                <Tab eventKey="containers" title={<span><Package size={18} className="me-1"/>Envases</span>}>
+                  <Row>
+                    <Col md={4}>
+                      <Card className="shadow-sm mb-3">
+                        <Card.Header className="bg-success text-white">
+                          <h5 className="mb-0"><RefreshCcw size={18} className="me-2"/>Saldar Devolución</h5>
+                        </Card.Header>
+                        <Card.Body>
+                          <Form onSubmit={handleRecordReturn}>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Envase a devolver</Form.Label>
+                              <Form.Select 
+                                value={selectedContainer?.product_id || ''} 
+                                onChange={(e) => {
+                                  const balance = containerBalances.find(b => b.product_id == e.target.value);
+                                  setSelectedContainer(balance);
+                                }}
+                                required
+                              >
+                                <option value="">Seleccione un envase...</option>
+                                {containerBalances.map(b => (
+                                  <option key={b.product_id} value={b.product_id}>
+                                    {b.product_name} (Deuda: {b.balance})
+                                  </option>
+                                ))}
+                              </Form.Select>
+                            </Form.Group>
+                            <Form.Group className="mb-3">
+                              <Form.Label>Cantidad</Form.Label>
+                              <Form.Control
+                                type="number"
+                                placeholder="Cant. a devolver"
+                                value={returnAmount}
+                                onChange={(e) => setReturnAmount(e.target.value)}
+                                max={selectedContainer?.balance}
+                                min="1"
+                                required
+                              />
+                            </Form.Group>
+                            <Button type="submit" variant="success" className="w-100" disabled={loading || !selectedContainer}>
+                              {loading ? 'Procesando...' : 'Registrar Devolución'}
+                            </Button>
+                          </Form>
+                        </Card.Body>
+                      </Card>
+
+                      <Card className="shadow-sm">
+                        <Card.Header>
+                          <h5 className="mb-0"><Package size={18} className="me-2"/>Saldos Pendientes</h5>
+                        </Card.Header>
+                        <ListGroup variant="flush">
+                          {containerBalances.length > 0 ? containerBalances.map(b => (
+                            <ListGroup.Item key={b.product_id} className="d-flex justify-content-between align-items-center">
+                              <span>{b.product_name}</span>
+                              <Badge bg="danger" pill className="fs-6">{b.balance} u.</Badge>
+                            </ListGroup.Item>
+                          )) : (
+                            <ListGroup.Item className="text-center text-muted py-4">No debe envases</ListGroup.Item>
+                          )}
+                        </ListGroup>
+                      </Card>
+                    </Col>
+                    <Col md={8}>
+                      <Card className="shadow-sm">
+                        <Card.Header>
+                          <h5 className="mb-0"><History size={18} className="me-2"/>Historial de Envases</h5>
+                        </Card.Header>
+                        <Card.Body className="p-0">
+                          {containerHistory.length > 0 ? (
+                            <Table hover responsive className="mb-0">
+                              <thead className="table-light">
+                                <tr>
+                                  <th>Fecha</th>
+                                  <th>Envase</th>
+                                  <th>Tipo</th>
+                                  <th className="text-center">Cant.</th>
+                                  <th className="text-center">Balance</th>
+                                  <th>Nota</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {containerHistory.map((h) => (
+                                  <tr key={h.id}>
+                                    <td className="small">{formatDate(h.created_at)}</td>
+                                    <td className="fw-bold">{h.product_name}</td>
+                                    <td>
+                                      <Badge bg={h.type === 'loan' ? 'danger' : 'success'}>
+                                        {h.type === 'loan' ? 'Préstamo' : 'Devolución'}
+                                      </Badge>
+                                    </td>
+                                    <td className="text-center fw-bold">{h.type === 'loan' ? '+' : '-'}{h.amount}</td>
+                                    <td className="text-center text-muted small">{h.balance_after}</td>
+                                    <td className="small text-truncate" style={{ maxWidth: '150px' }}>{h.description}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </Table>
+                          ) : (
+                            <div className="text-center py-5 text-muted">No hay movimientos de envases</div>
+                          )}
+                        </Card.Body>
+                      </Card>
+                    </Col>
+                  </Row>
+                </Tab>
+              </Tabs>
             </>
           ) : (
             <Card className="shadow-sm">

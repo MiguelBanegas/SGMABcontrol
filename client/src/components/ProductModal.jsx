@@ -24,7 +24,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
     is_offer: false,
     promo_buy: '',
     promo_pay: '',
-    promo_type: 'none'
+    promo_type: 'none',
+    is_container: false
   });
   const [image, setImage] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -56,11 +57,12 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         is_offer: !!editProduct.is_offer,
         promo_buy: editProduct.promo_buy || '',
         promo_pay: editProduct.promo_pay || '',
-        promo_type: editProduct.promo_type || 'none'
+        promo_type: editProduct.promo_type || 'none',
+        is_container: !!editProduct.is_container
       });
-      setPreview(editProduct.image_url ? `${editProduct.image_url}` : null);
+      setPreview(editProduct.image_url ? `/uploads/${editProduct.image_url}` : null);
     } else {
-      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false });
+      setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false, is_container: false });
       setPreview(null);
       setImage(null);
     }
@@ -312,7 +314,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
       if (editProduct) {
         handleClose();
       } else {
-        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false });
+        setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false, is_container: false });
         setImage(null);
         setPreview(null);
         setError('');
@@ -438,9 +440,8 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                       value={formData.sku} 
                       onChange={handleInputChange} 
                       ref={skuRef}
-                      required 
                       isInvalid={!!skuMatch}
-                      placeholder="Escanee o escriba el código..."
+                      placeholder="Dejar vacío para código automático..."
                       autoFocus={!editProduct}
                     />
                     <Button variant="outline-secondary" onClick={() => setShowScanner(true)}>
@@ -450,6 +451,11 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                       {skuMatch && `Ya existe: ${skuMatch.name}`}
                     </Form.Control.Feedback>
                   </InputGroup>
+                  {!skuMatch && !formData.sku && (
+                    <Form.Text className="text-muted small">
+                      Si se deja vacío, se usará el ID incremental disponible.
+                    </Form.Text>
+                  )}
                   {skuMatch && (
                     <Alert variant="warning" className="pt-1 pb-1 mt-1 mb-0 small border-0 bg-transparent text-danger p-0 fw-bold">
                       ⚠️ Este código ya pertenece a "{skuMatch.name}"
@@ -653,6 +659,21 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
                   />
                   <Form.Text className="text-muted">
                     Habilitar esto para que el sistema solicite el peso al vender este producto.
+                  </Form.Text>
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Check 
+                    type="switch"
+                    id="is-container-switch"
+                    label="Producto es un ENVASE RETORNABLE"
+                    name="is_container"
+                    checked={formData.is_container}
+                    onChange={handleInputChange}
+                    className="fw-bold text-success"
+                  />
+                  <Form.Text className="text-muted">
+                    Si está activo, al venderlo se generará una deuda física en la cuenta del cliente.
                   </Form.Text>
                 </Form.Group>
 

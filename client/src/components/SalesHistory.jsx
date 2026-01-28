@@ -43,10 +43,20 @@ const SalesHistory = () => {
     contentRef: componentRef,
   });
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (filters = {}) => {
     try {
+      setLoading(true);
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/sales/history', {
+      
+      // Construir query params
+      const params = new URLSearchParams();
+      if (filters.date) params.append('date', filters.date);
+      if (filters.seller) params.append('seller', filters.seller);
+      if (filters.customer) params.append('customer', filters.customer);
+      if (filters.payment) params.append('payment', filters.payment);
+      if (filters.status) params.append('status', filters.status);
+      
+      const response = await axios.get(`/api/sales/history?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setSales(response.data);
@@ -58,12 +68,13 @@ const SalesHistory = () => {
   };
 
   useEffect(() => {
-    fetchHistory();
+    // Cargar historial con fecha de hoy por defecto
+    fetchHistory({ date: filterDate });
     fetchCustomers();
     
     const handleSalesUpdate = () => {
       console.log('Ventas actualizadas, refrescando historial...');
-      fetchHistory();
+      fetchHistory({ date: filterDate, seller: filterSeller, customer: filterCustomer, payment: filterPayment, status: filterStatus });
     };
 
     socket.on('sales_updated', handleSalesUpdate);
@@ -115,30 +126,30 @@ const SalesHistory = () => {
     setShowModal(true);
   };
 
-  // Lógica de Filtrado
-  const filteredSales = useMemo(() => {
-    return sales.filter(sale => {
-      const matchesDate = !filterDate || isSameDay(new Date(sale.created_at), startOfDay(new Date(filterDate + 'T00:00:00')));
-      const matchesSeller = !filterSeller || (sale.seller_name || '').toLowerCase().includes(filterSeller.toLowerCase());
-      const matchesCustomer = !filterCustomer || (sale.customer_name || '').toLowerCase().includes(filterCustomer.toLowerCase());
-      const matchesPayment = !filterPayment || sale.payment_method === filterPayment;
-      const matchesStatus = !filterStatus || (sale.status || 'completado') === filterStatus;
+  // Recargar datos cuando cambian los filtros
+  useEffect(() => {
+    if (!loading) { // Evitar llamada duplicada en el primer render
+      fetchHistory({
+        date: filterDate,
+        seller: filterSeller,
+        customer: filterCustomer,
+        payment: filterPayment,
+        status: filterStatus
+      });
+    }
+  }, [filterDate, filterSeller, filterCustomer, filterPayment, filterStatus]);
 
-      return matchesDate && matchesSeller && matchesCustomer && matchesPayment && matchesStatus;
-    });
-  }, [sales, filterDate, filterSeller, filterCustomer, filterPayment, filterStatus]);
-
-  // Lista única de vendedores para el select (opcional, aquí usamos input para mayor flexibilidad)
+  // Lista única de vendedores para el select
   const sellers = useMemo(() => {
     const unique = new Set(sales.map(s => s.seller_name).filter(Boolean));
     return Array.from(unique);
   }, [sales]);
 
-  // Lógica de Paginación
-  const totalPages = Math.ceil(filteredSales.length / itemsPerPage);
+  // Lógica de Paginación (ahora sobre sales directamente, sin filtrado local)
+  const totalPages = Math.ceil(sales.length / itemsPerPage);
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentSales = filteredSales.slice(indexOfFirstItem, indexOfLastItem);
+  const currentSales = sales.slice(indexOfFirstItem, indexOfLastItem);
 
   // Resetear a página 1 cuando cambian los filtros
   useEffect(() => {
@@ -351,7 +362,7 @@ const SalesHistory = () => {
       {totalPages > 1 && (
         <div className="d-flex justify-content-between align-items-center mt-3">
           <div className="text-muted small">
-            Mostrando {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, filteredSales.length)} de {filteredSales.length} ventas
+            Mostrando {indexOfFirstItem + 1} - {Math.min(indexOfLastItem, sales.length)} de {sales.length} ventas
           </div>
           <Pagination className="mb-0">
             <Pagination.Prev 

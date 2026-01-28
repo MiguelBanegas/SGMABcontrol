@@ -4,6 +4,7 @@ import { Settings as SettingsIcon, Save, Database, Download, Upload } from 'luci
 
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import MigrationPanel from './MigrationPanel';
 
 const Settings = () => {
   const [cashDiscount, setCashDiscount] = useState('');
@@ -98,7 +99,15 @@ const Settings = () => {
           'Content-Type': 'multipart/form-data'
         }
       });
-      toast.success('Base de datos restaurada con éxito. Se recomienda recargar la página.');
+      toast.success('Base de datos restaurada con éxito. El sistema se reiniciará en unos segundos...', {
+        duration: 3000,
+        icon: '🔄'
+      });
+      
+      setTimeout(() => {
+        window.location.reload();
+      }, 3000);
+      
       setSelectedFile(null);
       // Resetear el input de archivo
       document.getElementById('restore-file-input').value = '';
@@ -318,6 +327,16 @@ const Settings = () => {
               </Form>
             </div>
           </div>
+        </Card.Body>
+      </Card>
+
+      <Card className="shadow-sm mt-4 border-info">
+        <Card.Header className="bg-info text-white d-flex align-items-center">
+          <Database size={20} className="me-2" />
+          <h5 className="mb-0">🔄 Migración de Datos</h5>
+        </Card.Header>
+        <Card.Body>
+          <MigrationPanel />
         </Card.Body>
       </Card>
 

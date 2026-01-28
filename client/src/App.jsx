@@ -17,7 +17,7 @@ import socket from './socket';
 
 const APP_VERSION = '1.6.7';
 
-const Home = () => <div className="mt-4"><h2>Bienvenido al SGM</h2><p>Seleccione una opción del menú para comenzar.</p></div>;
+const Home = () => <div className="mt-4"><h2>Bienvenido a Proveeduria MAR FRANK</h2><p>Seleccione una opción del menú para comenzar.</p></div>;
 
 function AppContent() {
   const { user, logout, loading } = useAuth();
@@ -64,7 +64,7 @@ function AppContent() {
         >
           Actualizar Ahora
         </Button>
-        <small className="mt-4 opacity-50">SGMABControl v{APP_VERSION} → v1.x.x</small>
+        <small className="mt-4 opacity-50">Proveeduria MAR FRANK v{APP_VERSION} → v1.x.x</small>
       </div>
     );
   }
@@ -80,7 +80,7 @@ function AppContent() {
       <Navbar bg="dark" variant="dark" expand="lg" className="shadow-sm" collapseOnSelect>
         <Container>
           <Navbar.Brand as={Link} to="/">
-            SGM Comercio <span style={{ fontSize: '0.6em', opacity: 0.6 }}>v{APP_VERSION}</span>
+            MAR FRANK <span style={{ fontSize: '0.6em', opacity: 0.6 }}>v{APP_VERSION}</span>
           </Navbar.Brand>
           <Navbar.Toggle aria-controls="basic-navbar-nav" />
           <Navbar.Collapse id="basic-navbar-nav">

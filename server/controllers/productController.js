@@ -90,35 +90,61 @@ exports.createProduct = async (req, res) => {
     promo_pay:
       isOffer && req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
     promo_type: isOffer ? req.body.promo_type || "none" : "none",
+    is_container:
+      req.body.is_container === "true" || req.body.is_container === true,
     business_id: req.user.business_id,
   };
 
+  // Si el SKU no viene, generamos uno basado en el último ID
+  if (!sku || sku.trim() === "") {
+    const lastProduct = await db("products").max("id as maxId").first();
+    productData.sku = String((lastProduct.maxId || 0) + 1);
+  }
+
   try {
-    // Verificar si existe un producto inactivo con el mismo SKU
-    const existingProduct = await db("products")
+    // Verificar si existe el SKU (activo o inactivo)
+    const existingSku = await db("products")
       .where({
         sku: productData.sku,
-        active: false,
         business_id: req.user.business_id,
       })
       .first();
 
-    if (existingProduct) {
-      // Reactivar y actualizar el producto existente
-      await db("products")
-        .where({ id: existingProduct.id })
-        .update({ ...productData, active: true });
+    if (existingSku) {
+      if (!existingSku.active) {
+        // Si el usuario proporcionó el SKU manualmente y existe uno inactivo
+        if (sku && sku.trim() !== "") {
+          return res.status(400).json({
+            message: `El código "${productData.sku}" ya está siendo usado por un producto inactivo ("${existingSku.name}").`,
+            id: existingSku.id,
+            inactive: true,
+          });
+        }
 
-      req.app.get("io").emit("catalog_updated");
-      return res.status(200).json({
-        id: existingProduct.id,
-        message:
-          "Producto reactivado y actualizado. Este producto ya existía y ha sido restaurado.",
-      });
+        // Si fue autogenerado o el usuario quiere reactivarlo (podríamos manejar esto en el front)
+        // Por ahora, reactivamos si el usuario no especificó SKU (evita colisiones con el autogenerado)
+        // O si reintenta sabiendo que existe.
+        await db("products")
+          .where({ id: existingSku.id })
+          .update({ ...productData, active: true });
+
+        req.app.get("io").emit("catalog_updated");
+        return res.status(200).json({
+          id: existingSku.id,
+          message:
+            "Producto reactivado y actualizado. Este código ya existía y ha sido restaurado.",
+        });
+      } else {
+        // Ya existe uno activo
+        return res.status(400).json({
+          message: `El código "${productData.sku}" ya está siendo usado por el producto "${existingSku.name}".`,
+        });
+      }
     }
 
-    // Si no existe inactivo, crear nuevo
-    const [id] = await db("products").insert(productData).returning("id");
+    // Si no existe, crear nuevo
+    const result = await db("products").insert(productData).returning("id");
+    const id = typeof result[0] === "object" ? result[0].id : result[0];
 
     // Enviar delta rico
     const newProduct = await db("products")
@@ -154,6 +180,12 @@ exports.updateProduct = async (req, res) => {
     price_offer,
     is_offer,
   } = req.body;
+
+  // Debug: Ver qué recibe el backend
+  console.log("=== UPDATE PRODUCT DEBUG ===");
+  console.log("is_container recibido:", req.body.is_container);
+  console.log("Tipo:", typeof req.body.is_container);
+  console.log("============================");
 
   // Validación y sanitización de precios y stock
   const parseNum = (val) => {
@@ -199,6 +231,8 @@ exports.updateProduct = async (req, res) => {
     promo_pay:
       isOffer && req.body.promo_pay ? parseInt(req.body.promo_pay) : null,
     promo_type: isOffer ? req.body.promo_type || "none" : "none",
+    is_container:
+      req.body.is_container === "true" || req.body.is_container === true,
   };
 
   if (req.file) {

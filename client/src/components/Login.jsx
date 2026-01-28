@@ -50,8 +50,8 @@ const Login = () => {
                  WebkitBackgroundClip: 'text',
                  WebkitTextFillColor: 'transparent',
                  letterSpacing: '-1px'
-               }}>SGM Acceso</h1>
-               <p className="text-muted small">Gestión Inteligente de Comercio</p>
+               }}>MAR FRANK Acceso</h1>
+               <p className="text-muted small">Proveeduria MAR FRANK</p>
             </div>
 
             {error && <Alert variant="danger" className="rounded-3 border-0 shadow-sm">{error}</Alert>}

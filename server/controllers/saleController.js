@@ -447,6 +447,28 @@ exports.getSalesStats = async (req, res) => {
       }),
     );
 
+    // 3. Asegurar que el primer elemento sea siempre HOY
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const todayStats = stats.find((s) => s.date === today);
+
+    if (!todayStats) {
+      // Si no hay ventas hoy, agregar un registro con ceros al inicio
+      stats.unshift({
+        date: today,
+        total_day: 0,
+        profit_day: 0,
+      });
+      // Limitar a 7 días
+      if (stats.length > 7) {
+        stats.pop();
+      }
+    } else if (stats[0].date !== today) {
+      // Si hay ventas hoy pero no es el primer elemento, reordenar
+      const index = stats.findIndex((s) => s.date === today);
+      const todayData = stats.splice(index, 1)[0];
+      stats.unshift(todayData);
+    }
+
     res.json(stats);
   } catch (error) {
     console.error("Error en getSalesStats:", error);
@@ -456,10 +478,39 @@ exports.getSalesStats = async (req, res) => {
 
 exports.getSalesHistory = async (req, res) => {
   try {
-    const sales = await db("sales")
+    const { date, seller, customer, payment, status } = req.query;
+
+    let query = db("sales")
       .leftJoin("users", "sales.user_id", "users.id")
       .leftJoin("customers", "sales.customer_id", "customers.id")
-      .where("sales.business_id", req.user.business_id)
+      .where("sales.business_id", req.user.business_id);
+
+    // Filtro por fecha (por defecto: hoy)
+    if (date) {
+      query = query.whereRaw("DATE(sales.created_at) = ?", [date]);
+    }
+
+    // Filtro por vendedor
+    if (seller) {
+      query = query.where("users.username", "like", `%${seller}%`);
+    }
+
+    // Filtro por cliente
+    if (customer) {
+      query = query.where("customers.name", "like", `%${customer}%`);
+    }
+
+    // Filtro por método de pago
+    if (payment) {
+      query = query.where("sales.payment_method", payment);
+    }
+
+    // Filtro por estado
+    if (status) {
+      query = query.where("sales.status", status);
+    }
+
+    const sales = await query
       .select(
         "sales.*",
         "users.username as seller_name",
@@ -1187,7 +1238,7 @@ exports.getProductEvolutionHistory = async (req, res) => {
       .groupBy(db.raw(dateFormat))
       .orderBy("period", "asc");
 
-    // Obtener historial de cambios de precio (detectados a través de price_unit)
+    // Obtener historial de cambios de precio (agrupando por día y tomando el máximo para filtrar promociones)
     const priceHistory = await db("sale_items")
       .join("sales", "sale_items.sale_id", "sales.id")
       .where("sale_items.product_id", productId)
@@ -1195,26 +1246,51 @@ exports.getProductEvolutionHistory = async (req, res) => {
       .where("sales.created_at", ">=", startDate)
       .select(
         db.raw("DATE(sales.created_at) as date"),
-        db.raw("sale_items.price_unit::FLOAT as price"),
-        "sales.created_at",
+        db.raw("MAX(sale_items.price_sell_at_sale)::FLOAT as price_sell"),
+        db.raw("MAX(sale_items.cost_at_sale)::FLOAT as price_cost"),
       )
-      .orderBy("sales.created_at", "asc");
+      .groupBy(db.raw("DATE(sales.created_at)"))
+      .orderBy("date", "asc");
 
-    // Detectar cambios significativos de precio (más de 0.01 de diferencia)
+    // Detectar cambios significativos de precio (más de 0.01 de diferencia en precio de venta o costo)
     const priceChanges = [];
-    let lastPrice = null;
+    let lastPriceSell = null;
+    let lastPriceCost = null;
 
     for (const record of priceHistory) {
-      const currentPrice = parseFloat(record.price);
-      if (lastPrice === null || Math.abs(currentPrice - lastPrice) > 0.01) {
+      const currentPriceSell = parseFloat(record.price_sell);
+      const currentPriceCost = parseFloat(record.price_cost);
+
+      // Detectar cambio en precio de venta:
+      // Solo registramos el cambio si el precio sube (para ignorar promociones)
+      // O si es el primer registro de precio
+      const sellChanged =
+        lastPriceSell === null || currentPriceSell > lastPriceSell + 0.01;
+
+      // Para el costo, seguimos detectando cualquier cambio significativo
+      const costChanged =
+        lastPriceCost === null ||
+        Math.abs(currentPriceCost - lastPriceCost) > 0.01;
+
+      if (sellChanged || costChanged) {
+        // Si el precio de venta es menor al último registrado (promoción),
+        // mantenemos el último precio de venta alto en el registro de este cambio de costo
+        const priceToRecord = sellChanged ? currentPriceSell : lastPriceSell;
+
         priceChanges.push({
           date: record.date,
-          price: currentPrice,
-          change: lastPrice
-            ? ((currentPrice - lastPrice) / lastPrice) * 100
+          price_sell: priceToRecord,
+          price_cost: currentPriceCost,
+          sell_change: lastPriceSell
+            ? ((priceToRecord - lastPriceSell) / lastPriceSell) * 100
+            : 0,
+          cost_change: lastPriceCost
+            ? ((currentPriceCost - lastPriceCost) / lastPriceCost) * 100
             : 0,
         });
-        lastPrice = currentPrice;
+
+        if (sellChanged) lastPriceSell = currentPriceSell;
+        lastPriceCost = currentPriceCost;
       }
     }
 
@@ -1239,7 +1315,7 @@ exports.getProductEvolutionHistory = async (req, res) => {
     // Obtener precio actual y primer precio
     const currentPrice = parseFloat(product.price_sell);
     const firstPrice =
-      priceChanges.length > 0 ? priceChanges[0].price : currentPrice;
+      priceChanges.length > 0 ? priceChanges[0].price_sell : currentPrice;
     const priceIncrease =
       firstPrice > 0 ? ((currentPrice - firstPrice) / firstPrice) * 100 : 0;
 
@@ -1264,12 +1340,20 @@ exports.getProductEvolutionHistory = async (req, res) => {
         ? ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100
         : 0;
 
-    // Obtener precio mínimo y máximo histórico
-    const allPrices = priceHistory.map((p) => parseFloat(p.price));
-    const minHistoricalPrice =
-      allPrices.length > 0 ? Math.min(...allPrices) : currentPrice;
-    const maxHistoricalPrice =
-      allPrices.length > 0 ? Math.max(...allPrices) : currentPrice;
+    // Obtener precio mínimo y máximo histórico (venta y costo)
+    const allPricesSell = priceHistory.map((p) => parseFloat(p.price_sell));
+    const allPricesCost = priceHistory.map((p) => parseFloat(p.price_cost));
+
+    const minHistoricalPriceSell =
+      allPricesSell.length > 0 ? Math.min(...allPricesSell) : currentPrice;
+    const maxHistoricalPriceSell =
+      allPricesSell.length > 0 ? Math.max(...allPricesSell) : currentPrice;
+
+    const currentCost = parseFloat(product.price_buy || 0);
+    const minHistoricalPriceCost =
+      allPricesCost.length > 0 ? Math.min(...allPricesCost) : currentCost;
+    const maxHistoricalPriceCost =
+      allPricesCost.length > 0 ? Math.max(...allPricesCost) : currentCost;
 
     res.json({
       product: {
@@ -1277,6 +1361,7 @@ exports.getProductEvolutionHistory = async (req, res) => {
         name: product.name,
         sku: product.sku,
         current_price: parseFloat(product.price_sell),
+        current_cost: parseFloat(product.price_buy || 0),
         image_url: product.image_url,
       },
       stats: {
@@ -1290,9 +1375,12 @@ exports.getProductEvolutionHistory = async (req, res) => {
       },
       priceStats: {
         currentPrice: parseFloat(currentPrice.toFixed(2)),
+        currentCost: parseFloat(currentCost.toFixed(2)),
         firstPrice: parseFloat(firstPrice.toFixed(2)),
-        minHistoricalPrice: parseFloat(minHistoricalPrice.toFixed(2)),
-        maxHistoricalPrice: parseFloat(maxHistoricalPrice.toFixed(2)),
+        minHistoricalPriceSell: parseFloat(minHistoricalPriceSell.toFixed(2)),
+        maxHistoricalPriceSell: parseFloat(maxHistoricalPriceSell.toFixed(2)),
+        minHistoricalPriceCost: parseFloat(minHistoricalPriceCost.toFixed(2)),
+        maxHistoricalPriceCost: parseFloat(maxHistoricalPriceCost.toFixed(2)),
         priceIncrease: parseFloat(priceIncrease.toFixed(2)),
         priceChangesCount: priceChanges.length,
       },
@@ -1306,10 +1394,8 @@ exports.getProductEvolutionHistory = async (req, res) => {
     });
   } catch (error) {
     console.error("Error en getProductEvolutionHistory:", error);
-    res
-      .status(500)
-      .json({
-        message: "Error al obtener historial de evolución del producto",
-      });
+    res.status(500).json({
+      message: "Error al obtener historial de evolución del producto",
+    });
   }
 };

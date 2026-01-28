@@ -1419,7 +1419,7 @@ const Sales = () => {
                     >
                       <div className="d-flex align-items-center">
                         <div className="bg-light rounded me-3 d-flex align-items-center justify-content-center overflow-hidden" style={{ width: '140px', height: '140px', border: '1px solid #eee', flexShrink: 0 }}>
-                          {p.image_url ? <img src={`${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Search size={40} className="opacity-25" />}
+                          {p.image_url ? <img src={`/uploads/${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Search size={40} className="opacity-25" />}
                         </div>
                         <div>
                           <strong className="fs-4 d-block">{p.name}</strong>
@@ -1495,7 +1495,7 @@ const Sales = () => {
                             >
                               {item.image_url ? (
                                 <img 
-                                  src={`${item.image_url}`} 
+                                  src={`/uploads/${item.image_url}`} 
                                   alt={item.name}
                                   style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                                 />
@@ -1512,11 +1512,14 @@ const Sales = () => {
                                 {item.promo_type === 'quantity' && item.promo_buy && item.promo_pay && (
                                   <Badge bg="danger" className="x-small">🔥 {item.promo_buy}×{item.promo_pay}</Badge>
                                 )}
-                                {item.promo_type === 'both' && (
+                                 {item.promo_type === 'both' && (
                                   <>
                                     <Badge bg="success" className="x-small me-1">💰 ${item.price_offer}</Badge>
                                     <Badge bg="danger" className="x-small">🔥 {item.promo_buy}×{item.promo_pay}</Badge>
                                   </>
+                                )}
+                                {item.is_container && (
+                                  <Badge bg="info" className="x-small text-dark">📦 Envase</Badge>
                                 )}
                               </div>
                             </div>
@@ -1701,10 +1704,10 @@ const Sales = () => {
                 
                 if (difference >= 0) {
                   return (
-                    <div className="mt-2 p-2 bg-success bg-opacity-25 border border-success rounded">
-                      <div className="d-flex justify-content-between">
-                        <span className="text-success fw-bold">Vuelto:</span>
-                        <span className="text-success fw-bold">${difference.toFixed(2)}</span>
+                    <div className="mt-2 p-3 bg-warning bg-opacity-25 border border-warning border-2 rounded">
+                      <div className="d-flex justify-content-between align-items-center">
+                        <span className="text-warning fw-bold h5 mb-0">💰 Vuelto:</span>
+                        <span className="text-warning fw-bold display-6">${difference.toFixed(2)}</span>
                       </div>
                     </div>
                   );

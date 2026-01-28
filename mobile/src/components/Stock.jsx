@@ -297,7 +297,7 @@ const Stock = () => {
       )}
       <div className="d-flex justify-content-between align-items-center mb-3 pt-2">
         <h5 className="mb-0 fw-bold d-flex align-items-center text-primary">
-            SGMABControl Stock v{APP_VERSION}
+            MAR FRANK Stock v{APP_VERSION}
         </h5>
         <div className="d-flex gap-2">
             {isAdmin && (

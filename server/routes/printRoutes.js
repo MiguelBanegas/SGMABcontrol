@@ -64,8 +64,8 @@ function generateTicketHtml(sale) {
           <div style="font-weight: 600;">${item.product_name}</div>
           <div style="font-size: 9.5px; margin-top: 2px; color: #444;">
             <b>@ $${unitListPrice.toFixed(2)}</b> ${
-        isWeight ? "/Kg" : "x unid."
-      }
+              isWeight ? "/Kg" : "x unid."
+            }
           </div>
           ${
             item.promo_type && item.promo_type !== "none"
@@ -77,12 +77,12 @@ function generateTicketHtml(sale) {
           ${
             item.discount_amount > 0
               ? `<div style="font-size: 9px; color: #999; text-decoration: line-through;">$${totalItemLista.toFixed(
-                  2
+                  2,
                 )}</div>`
               : ""
           }
           <div style="font-weight: 700;">$${Number(item.subtotal).toFixed(
-            2
+            2,
           )}</div>
         </td>
       </tr>
@@ -92,11 +92,11 @@ function generateTicketHtml(sale) {
 
   const totalLista = sale.items.reduce(
     (acc, item) => acc + (Number(item.subtotal) + Number(item.discount_amount)),
-    0
+    0,
   );
   const totalItemSavings = sale.items.reduce(
     (acc, item) => acc + Number(item.discount_amount),
-    0
+    0,
   );
 
   return `
@@ -119,8 +119,8 @@ function generateTicketHtml(sale) {
     </head>
     <body>
       <div class="center">
-        <h1 style="margin: 0; font-size: 20px;">SGMAB CONTROL</h1>
-        <p style="margin: 2px 0; opacity: 0.8;">Comercio & Gestión</p>
+        <h1 style="margin: 0; font-size: 20px;">Proveeduria MAR FRANK</h1>
+        <p style="margin: 2px 0; opacity: 0.8;">Proveeduria MAR FRANK</p>
         <hr>
       </div>
       <div>
@@ -149,14 +149,14 @@ function generateTicketHtml(sale) {
         ${
           Number(sale.cash_discount) > 0
             ? `<div style="display: flex; justify-content: space-between; color: #198754;"><span>Desc. Efectivo:</span><span>-$${Number(
-                sale.cash_discount
+                sale.cash_discount,
               ).toFixed(2)}</span></div>`
             : ""
         }
         <div style="margin-top: 10px; padding: 8px 0; border: 2px solid black; display: flex; justify-content: space-between;">
           <span style="font-weight: 900;">TOTAL A PAGAR:</span>
           <span style="font-size: 18px; font-weight: 900;">$${Number(
-            sale.total
+            sale.total,
           ).toFixed(2)}</span>
         </div>
       </div>
@@ -193,7 +193,7 @@ function generateAccountHtml(customer, balance, transactions) {
           t.type === "debt" ? "+" : "-"
         }$${Number(t.amount).toFixed(2)}</td>
         <td style="text-align: right; padding: 4px 0;"><b>$${Number(
-          t.balance
+          t.balance,
         ).toFixed(2)}</b></td>
       </tr>
     `;
@@ -221,7 +221,7 @@ function generateAccountHtml(customer, balance, transactions) {
     <body>
       <div class="center">
         <h1 style="margin: 0; font-size: 18px;">ESTADO DE CUENTA</h1>
-        <p style="margin: 2px 0;">SGMAB CONTROL</p>
+        <p style="margin: 2px 0;">Proveeduria MAR FRANK</p>
         <hr>
       </div>
       <div>
@@ -232,8 +232,8 @@ function generateAccountHtml(customer, balance, transactions) {
         <div style="display: flex; justify-content: space-between; font-size: 14px;">
           <b>SALDO TOTAL:</b>
           <b style="color: ${balance > 0 ? "red" : "green"};">$${Number(
-    balance
-  ).toFixed(2)}</b>
+            balance,
+          ).toFixed(2)}</b>
         </div>
       </div>
       <p style="font-weight: bold; text-transform: uppercase; font-size: 10px; margin-bottom: 5px;">Últimos Movimientos:</p>

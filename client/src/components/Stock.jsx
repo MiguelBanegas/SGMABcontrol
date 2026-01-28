@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, Button, InputGroup, Form, Badge, ListGroup } from 'react-bootstrap';
-import { Plus, Search, Package, Image as ImageIcon, TrendingUp, Camera } from 'lucide-react';
+import { Plus, Search, Package, Image as ImageIcon, TrendingUp, Camera, BarChart3 } from 'lucide-react';
 import axios from 'axios';
 import ProductModal from './ProductModal';
 import BarcodeScanner from './BarcodeScanner';
+import ProductEvolutionHistory from './ProductEvolutionHistory';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
 
@@ -17,6 +18,8 @@ const Stock = () => {
   const [searchResults, setSearchResults] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [showScanner, setShowScanner] = useState(false);
+  const [showEvolution, setShowEvolution] = useState(false);
+  const [evolutionProduct, setEvolutionProduct] = useState(null);
   const { user } = useAuth();
   const searchInputRef = useRef(null);
   const searchTimeoutRef = useRef(null);
@@ -248,7 +251,7 @@ const Stock = () => {
                 >
                   <div className="me-3" style={{ width: '140px', height: '140px', overflow: 'hidden', borderRadius: '4px', border: '1px solid #eee', flexShrink: 0 }}>
                     {p.image_url ? (
-                      <img src={`${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={`/uploads/${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <div className="bg-light w-100 h-100 d-flex align-items-center justify-content-center text-muted">
                         <ImageIcon size={40} className="opacity-25" />
@@ -289,7 +292,7 @@ const Stock = () => {
               >
                 <div style={{ height: '120px', overflow: 'hidden' }}>
                   {product.image_url ? (
-                    <img src={`${product.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={`/uploads/${product.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <div className="bg-light w-100 h-100 d-flex align-items-center justify-content-center text-muted">
                       <ImageIcon size={32} className="opacity-25" />
@@ -324,7 +327,7 @@ const Stock = () => {
               <div style={{ height: '180px', overflow: 'hidden', position: 'relative' }}>
                 {product.image_url ? (
                   <img 
-                    src={`${product.image_url}`} 
+                    src={`/uploads/${product.image_url}`} 
                     alt={product.name}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
@@ -362,58 +365,73 @@ const Stock = () => {
                     Stock: {Math.floor(product.stock)}
                   </Badge>
                 </div>
-                {isAdmin && (
-                  <InputGroup size="sm" className="mt-auto">
-                    <InputGroup.Text className="bg-light border-end-0">
-                      <Package size={14} />
-                    </InputGroup.Text>
-                    <Form.Control 
-                      type="number" 
-                      placeholder="+/- stock"
-                      className="border-start-0 border-end-0"
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                <div className="mt-auto">
+                  <Button 
+                    variant="outline-primary" 
+                    size="sm" 
+                    className="w-100 mb-2"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEvolutionProduct(product);
+                      setShowEvolution(true);
+                    }}
+                  >
+                    <BarChart3 size={14} className="me-1" />
+                    Ver Historial
+                  </Button>
+                  {isAdmin && (
+                    <InputGroup size="sm">
+                      <InputGroup.Text className="bg-light border-end-0">
+                        <Package size={14} />
+                      </InputGroup.Text>
+                      <Form.Control 
+                        type="number" 
+                        placeholder="+/- stock"
+                        className="border-start-0 border-end-0"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.stopPropagation();
+                            const adjustment = parseFloat(e.target.value);
+                            if (!isNaN(adjustment) && adjustment !== 0) {
+                              const newStock = Math.max(0, product.stock + adjustment);
+                              axios.patch(`/api/products/${product.id}`, 
+                                { stock: newStock },
+                                { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+                              ).then(() => {
+                                e.target.value = '';
+                                fetchProducts();
+                                fetchTopSellers();
+                              }).catch(err => console.error('Error updating stock:', err));
+                            }
+                          }
+                        }}
+                      />
+                      <Button 
+                        variant="success" 
+                        size="sm"
+                        onClick={(e) => {
                           e.stopPropagation();
-                          const adjustment = parseFloat(e.target.value);
+                          const input = e.target.closest('.input-group').querySelector('input[type="number"]');
+                          const adjustment = parseFloat(input.value);
                           if (!isNaN(adjustment) && adjustment !== 0) {
                             const newStock = Math.max(0, product.stock + adjustment);
                             axios.patch(`/api/products/${product.id}`, 
                               { stock: newStock },
                               { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
                             ).then(() => {
-                              e.target.value = '';
+                              input.value = '';
                               fetchProducts();
                               fetchTopSellers();
                             }).catch(err => console.error('Error updating stock:', err));
                           }
-                        }
-                      }}
-                    />
-                    <Button 
-                      variant="success" 
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const input = e.target.closest('.input-group').querySelector('input[type="number"]');
-                        const adjustment = parseFloat(input.value);
-                        if (!isNaN(adjustment) && adjustment !== 0) {
-                          const newStock = Math.max(0, product.stock + adjustment);
-                          axios.patch(`/api/products/${product.id}`, 
-                            { stock: newStock },
-                            { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-                          ).then(() => {
-                            input.value = '';
-                            fetchProducts();
-                            fetchTopSellers();
-                          }).catch(err => console.error('Error updating stock:', err));
-                        }
-                      }}
-                    >
-                      ✓
-                    </Button>
-                  </InputGroup>
-                )}
+                        }}
+                      >
+                        ✓
+                      </Button>
+                    </InputGroup>
+                  )}
+                </div>
               </Card.Body>
             </Card>
           </Col>
@@ -439,6 +457,15 @@ const Stock = () => {
           onClose={() => setShowScanner(false)} 
         />
       )}
+
+      <ProductEvolutionHistory 
+        show={showEvolution}
+        onHide={() => {
+          setShowEvolution(false);
+          setEvolutionProduct(null);
+        }}
+        product={evolutionProduct}
+      />
     </div>
   );
 };
