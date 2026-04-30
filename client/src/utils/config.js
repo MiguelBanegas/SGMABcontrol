@@ -2,9 +2,9 @@ const getServerUrl = () => {
   const savedUrl = localStorage.getItem("SERVER_URL");
   if (savedUrl) return savedUrl;
 
-  // En desarrollo (Vite), si no hay URL guardada, usamos localhost:5051
+  // En desarrollo (Vite), si no hay URL guardada, usamos localhost:5059
   if (import.meta.env.DEV) {
-    return "http://localhost:5051";
+    return "http://localhost:5059";
   }
 
   // En producción, usamos el origen actual (dominio o IP)

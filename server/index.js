@@ -3,7 +3,7 @@ const os = require("os");
 
 console.log(
   ">>> SISTEMA INICIADO: Versión 1.5.0 - Puerto:",
-  process.env.PORT || 5051,
+  process.env.PORT || 5058,
 );
 const express = require("express");
 const cors = require("cors");
@@ -53,7 +53,7 @@ app.set("io", io);
 app.set("version", WEB_VERSION);
 app.set("mobile_version", MOBILE_VERSION);
 
-const PORT = process.env.PORT || 5051;
+const PORT = process.env.PORT || 5058;
 const fs = require("fs");
 // Asegurar que la carpeta de subidas exista
 const uploadsDir = path.join(__dirname, "uploads");

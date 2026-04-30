@@ -18,7 +18,7 @@ const MigrationPanel = () => {
       setLoading(true);
       const token = localStorage.getItem("token");
       const response = await axios.get(
-        `${import.meta.env.VITE_API_URL || "http://localhost:5051"}/api/migration/migration-status`,
+        `${import.meta.env.VITE_API_URL || window.location.origin}/api/migration/migration-status`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -48,7 +48,7 @@ const MigrationPanel = () => {
 
       const token = localStorage.getItem("token");
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL || "http://localhost:5051"}/api/migration/run-migration`,
+        `${import.meta.env.VITE_API_URL || window.location.origin}/api/migration/run-migration`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
