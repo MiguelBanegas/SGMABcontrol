@@ -7,6 +7,7 @@ import BarcodeScanner from './BarcodeScanner';
 import ProductEvolutionHistory from './ProductEvolutionHistory';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
+import { getImageUrl } from '../utils/imageUtils';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
@@ -251,7 +252,7 @@ const Stock = () => {
                 >
                   <div className="me-3" style={{ width: '140px', height: '140px', overflow: 'hidden', borderRadius: '4px', border: '1px solid #eee', flexShrink: 0 }}>
                     {p.image_url ? (
-                      <img src={`/uploads/${p.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <img src={getImageUrl(p.image_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <div className="bg-light w-100 h-100 d-flex align-items-center justify-content-center text-muted">
                         <ImageIcon size={40} className="opacity-25" />
@@ -292,7 +293,7 @@ const Stock = () => {
               >
                 <div style={{ height: '120px', overflow: 'hidden' }}>
                   {product.image_url ? (
-                    <img src={`/uploads/${product.image_url}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <img src={getImageUrl(product.image_url)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
                     <div className="bg-light w-100 h-100 d-flex align-items-center justify-content-center text-muted">
                       <ImageIcon size={32} className="opacity-25" />
@@ -327,7 +328,7 @@ const Stock = () => {
               <div style={{ height: '180px', overflow: 'hidden', position: 'relative' }}>
                 {product.image_url ? (
                   <img 
-                    src={`/uploads/${product.image_url}`} 
+                    src={getImageUrl(product.image_url)} 
                     alt={product.name}
                     style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />

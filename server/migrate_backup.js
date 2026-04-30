@@ -90,15 +90,36 @@ async function migrate(progressCallback = null) {
     updateProgress("Migrando productos...", 20);
     const sqliteProducts = await getSqliteData("SELECT * FROM producto");
 
+    // Log de columnas para depuración (solo una vez)
+    if (sqliteProducts.length > 0) {
+      console.log(
+        "Columnas disponibles en SQLite (producto):",
+        Object.keys(sqliteProducts[0]).join(", "),
+      );
+    }
+
     for (const p of sqliteProducts) {
+      const stock = parseFloat(p.cantidad || 0);
+
+      // Lógica de detección:
+      // - Si tiene decimales en el stock
+      // - O si el nombre incluye palabras clave (kg, gr, peso, etc)
+      // - O si existe un campo específico en el backup (intentamos detectar 'venta_por_peso' o similar)
+      const isWeight =
+        stock % 1 !== 0 ||
+        /kg|gr|gramo|kilo|peso/i.test(p.nombre || "") ||
+        p.venta_por_peso == 1 ||
+        p.al_peso == 1;
+
       const productData = {
         sku: p.key,
         name: p.nombre,
         description: p.descripcion,
-        price_buy: p.p_compra || 0,
-        price_sell: p.p_venta || 0,
-        stock: Math.floor(p.cantidad || 0),
-        category_id: catMap[p.categoria] || null,
+        price_buy: parseFloat(p.p_compra || 0),
+        price_sell: parseFloat(p.p_venta || 0),
+        stock: stock,
+        sell_by_weight: isWeight,
+        category_id: catMap[p.categoria] || null, // Assuming p.categoria is the folio
         image_url: p.key ? `${p.key}.jpg` : null,
         business_id: DEFAULT_BUSINESS_ID,
         active: true,
@@ -115,6 +136,7 @@ async function migrate(progressCallback = null) {
           price_sell: productData.price_sell,
           stock: productData.stock,
           category_id: productData.category_id,
+          sell_by_weight: productData.sell_by_weight,
           updated_at: knex.fn.now(),
         });
         stats.products.updated++;
@@ -127,11 +149,11 @@ async function migrate(progressCallback = null) {
     // Crear mapa de productos por nombre para los items de venta
     const pgProducts = await knex("products")
       .where("business_id", DEFAULT_BUSINESS_ID)
-      .select("id", "name", "sku");
+      .select("id", "name", "sku", "sell_by_weight");
     const productNameMap = {};
     pgProducts.forEach((p) => {
-      productNameMap[p.name] = p.id;
-      productNameMap[p.sku] = p.id;
+      productNameMap[p.name] = { id: p.id, sell_by_weight: p.sell_by_weight };
+      productNameMap[p.sku] = { id: p.id, sell_by_weight: p.sell_by_weight };
     });
 
     // 3. Migrar Clientes
@@ -225,6 +247,12 @@ async function migrate(progressCallback = null) {
       "SELECT * FROM venta_producto",
     );
 
+    // Mapeo de productos a su estado sell_by_weight para las ventas
+    // This map is already created above as productNameMap, just need to ensure it has sell_by_weight
+    // const productWeightMap = {};
+    // const pgProducts = await knex("products").where("business_id", DEFAULT_BUSINESS_ID).select("id", "name", "sell_by_weight");
+    // pgProducts.forEach(p => { productWeightMap[p.name] = p.sell_by_weight; });
+
     for (const vp of sqliteVentaProductos) {
       const saleId = saleIdMap[vp.folio];
       if (!saleId) {
@@ -232,20 +260,24 @@ async function migrate(progressCallback = null) {
         continue;
       }
 
-      const productId = productNameMap[vp.nombre];
-      if (!productId) {
+      const productInfo = productNameMap[vp.nombre];
+      if (!productInfo) {
         console.warn(`Producto no encontrado: ${vp.nombre}`);
         continue;
       }
 
+      const quantity = parseFloat(vp.cantidad || 1);
+      const isWeight = productInfo.sell_by_weight || quantity % 1 !== 0;
+
       await knex("sale_items").insert({
         sale_id: saleId,
-        product_id: productId,
-        quantity: Math.floor(vp.cantidad || 1),
-        price_unit: vp.p_venta || 0,
-        price_sell_at_sale: vp.p_venta || 0, // Precio de venta al momento de la venta
-        cost_at_sale: vp.p_compra || 0, // Precio de costo al momento de la venta
-        subtotal: vp.subtotal || 0,
+        product_id: productInfo.id,
+        quantity: quantity,
+        price_unit: parseFloat(vp.p_venta || 0),
+        subtotal: parseFloat(vp.p_venta || 0) * quantity,
+        price_sell_at_sale: parseFloat(vp.p_venta || 0),
+        cost_at_sale: parseFloat(vp.p_compra || 0),
+        sell_by_weight: isWeight ? 1 : 0,
       });
 
       stats.saleItems.added++;

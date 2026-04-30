@@ -44,7 +44,7 @@ export const scanNetwork = async (
   baseIp,
   start = 1,
   end = 254,
-  port = 5051
+  port = 5051,
 ) => {
   console.log(`🔍 Escaneando red ${baseIp}.${start}-${end}:${port}...`);
 
@@ -107,9 +107,14 @@ export const autoDiscoverServer = async () => {
  */
 export const verifyServer = async (serverUrl) => {
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
     const response = await fetch(`${serverUrl}/api/server-info`, {
-      signal: AbortSignal.timeout(3000),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
     return response.ok;
   } catch {
     return false;

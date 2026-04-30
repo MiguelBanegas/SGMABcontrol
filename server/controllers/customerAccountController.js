@@ -25,7 +25,7 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
         (t.type === "debt"
           ? parseFloat(t.amount || 0)
           : -parseFloat(t.amount || 0)),
-      0
+      0,
     );
 
   // 3. Ventas vinculadas
@@ -62,11 +62,11 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
       const currentTotal = items.reduce(
         (acc, item) =>
           acc + parseFloat(item.quantity) * parseFloat(item.price_sell),
-        0
+        0,
       );
       const pendingForThisSale = Math.max(
         0,
-        currentTotal - initialPaid - linkedPayments
+        currentTotal - initialPaid - linkedPayments,
       );
       totalLinkedDebt += pendingForThisSale;
     } else {
@@ -118,7 +118,7 @@ exports.getCustomerTransactions = async (req, res) => {
             .select(
               "sale_items.*",
               "products.name as product_name",
-              "products.price_sell as current_price_sell"
+              "products.price_sell as current_price_sell",
             );
 
           // Obtener pagos POSTERIORES para esta venta (excluyendo pagos iniciales)
@@ -145,7 +145,7 @@ exports.getCustomerTransactions = async (req, res) => {
               (acc, item) =>
                 acc +
                 parseFloat(item.quantity) * parseFloat(item.current_price_sell),
-              0
+              0,
             );
             revaluedAmount =
               currentTotal -
@@ -168,7 +168,7 @@ exports.getCustomerTransactions = async (req, res) => {
           };
         }
         return transaction;
-      })
+      }),
     );
 
     res.json({
@@ -209,7 +209,7 @@ exports.getCustomerBalances = async (req, res) => {
           ...customer,
           balance: parseFloat(balance.toFixed(2)),
         };
-      })
+      }),
     );
 
     // Ordenar por balance descendente (los que más deben primero)
@@ -217,10 +217,10 @@ exports.getCustomerBalances = async (req, res) => {
 
     const totalDebt = customersWithBalances.reduce(
       (acc, curr) => acc + Math.max(0, curr.balance),
-      0
+      0,
     );
     const customersWithDebt = customersWithBalances.filter(
-      (c) => c.balance > 0
+      (c) => c.balance > 0,
     ).length;
 
     res.json({
@@ -254,6 +254,22 @@ exports.recordPayment = async (req, res) => {
 
   const trx = await db.transaction();
   try {
+    // Obtener caja abierta
+    const openRegisterCheck = await trx("cash_registers")
+      .where({
+        user_id: req.user.id,
+        business_id: req.user.business_id,
+        status: "open",
+      })
+      .first();
+
+    if (!openRegisterCheck && req.user.role !== "admin") {
+      await trx.rollback();
+      return res
+        .status(400)
+        .json({ message: "Debe tener una caja abierta para registrar pagos" });
+    }
+
     const customer = await trx("customers")
       .where({ id, business_id: req.user.business_id })
       .first();
@@ -293,7 +309,7 @@ exports.recordPayment = async (req, res) => {
 
       const linkedPaymentsSum = transactions.reduce(
         (acc, t) => acc + parseFloat(t.amount || 0),
-        0
+        0,
       );
 
       const originalDebt =
@@ -308,7 +324,7 @@ exports.recordPayment = async (req, res) => {
         const currentTotal = items.reduce(
           (acc, item) =>
             acc + parseFloat(item.quantity) * parseFloat(item.price_sell),
-          0
+          0,
         );
         const revaluedPending =
           currentTotal - parseFloat(sale.amount_paid || 0) - linkedPaymentsSum;

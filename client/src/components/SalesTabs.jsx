@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Badge, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { X, Plus } from 'lucide-react';
+import { X, Plus, Package } from 'lucide-react';
 
 const SalesTabs = ({ tabs, activeTabId, onTabChange, onTabClose, onNewTab }) => {
   const calculateTotal = (cart) => {
@@ -52,9 +52,16 @@ const SalesTabs = ({ tabs, activeTabId, onTabChange, onTabClose, onNewTab }) => 
                 </Badge>
               </div>
               {tab.customer && (
-                <small className="text-muted d-block text-truncate" style={{ maxWidth: '120px' }}>
-                  {tab.customer.name}
-                </small>
+                <div className="d-flex align-items-center gap-1">
+                  <small className="text-muted d-block text-truncate" style={{ maxWidth: '120px' }}>
+                    {tab.customer.name}
+                  </small>
+                  {tab.hasPendingContainers && (
+                    <Badge bg="danger" className="p-1 rounded-circle" title="Debe envases">
+                      <Package size={10} />
+                    </Badge>
+                  )}
+                </div>
               )}
               {total > 0 && (
                 <small className="text-success fw-bold">

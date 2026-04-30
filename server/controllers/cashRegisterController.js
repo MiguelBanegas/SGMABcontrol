@@ -123,15 +123,17 @@ exports.closeCashRegister = async (req, res) => {
       account_payments_electronic.debit +
       account_payments_electronic.credit;
 
-    // Obtener gastos y retiros
+    // Obtener gastos, retiros e ingresos
     const expenses = parseFloat(cashRegister.expenses || 0);
     const withdrawals = parseFloat(cashRegister.withdrawals || 0);
+    const inflows = parseFloat(cashRegister.inflows || 0);
 
     // Calcular efectivo esperado
     const expected_amount =
       parseFloat(cashRegister.opening_amount) +
       totals.cash +
-      account_payments_cash -
+      account_payments_cash +
+      inflows -
       expenses -
       withdrawals;
 
@@ -144,6 +146,7 @@ exports.closeCashRegister = async (req, res) => {
       .update({
         closing_amount,
         expected_amount,
+        inflows,
         difference,
         cash_sales: totals.cash,
         transfer_sales: totals.transfer + account_payments_electronic.transfer,
@@ -151,6 +154,7 @@ exports.closeCashRegister = async (req, res) => {
         credit_sales: totals.credit + account_payments_electronic.credit,
         account_sales,
         account_payments,
+        account_payments_cash,
         status: "closed",
         closed_at: db.fn.now(),
         notes,
@@ -167,6 +171,7 @@ exports.closeCashRegister = async (req, res) => {
         credit: totals.credit,
         account_sales,
         account_payments,
+        account_payments_cash,
       },
     });
   } catch (error) {
@@ -261,14 +266,16 @@ exports.getCurrentCashRegister = async (req, res) => {
       account_payments_electronic.debit +
       account_payments_electronic.credit;
 
-    // Calcular efectivo esperado actual
+    // Calcular efectivo esperado actual actual
     const expenses = parseFloat(cashRegister.expenses || 0);
     const withdrawals = parseFloat(cashRegister.withdrawals || 0);
+    const inflows = parseFloat(cashRegister.inflows || 0);
 
     const current_expected =
       parseFloat(cashRegister.opening_amount) +
       totals.cash +
-      account_payments_cash -
+      account_payments_cash +
+      inflows -
       expenses -
       withdrawals;
 
@@ -289,6 +296,7 @@ exports.getCurrentCashRegister = async (req, res) => {
       current_credit_sales: totals.credit + account_payments_electronic.credit,
       current_account_sales: account_sales,
       current_account_payments: account_payments,
+      current_account_payments_cash: account_payments_cash,
       current_expected,
       total_sales,
     });
@@ -332,6 +340,10 @@ exports.addCashMovement = async (req, res) => {
       await db("cash_registers")
         .where({ id: cash_register_id })
         .increment("withdrawals", amount);
+    } else if (type === "inflow") {
+      await db("cash_registers")
+        .where({ id: cash_register_id })
+        .increment("inflows", amount);
     }
     // account_payment se suma automáticamente al consultar
 

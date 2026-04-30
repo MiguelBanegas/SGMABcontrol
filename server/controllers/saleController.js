@@ -28,6 +28,38 @@ exports.createSale = async (req, res) => {
     });
   }
 
+  // Verificar si hay una caja abierta para este usuario
+  const openRegisterCheck = await db("cash_registers")
+    .where({
+      user_id: req.user.id,
+      business_id: req.user.business_id,
+      status: "open",
+    })
+    .first();
+
+  if (!openRegisterCheck) {
+    return res.status(400).json({
+      message: "Debe abrir la caja antes de realizar una venta",
+    });
+  }
+
+  // Validación: Si hay envases, debe haber cliente para trazabilidad
+  try {
+    const productIds = items.map((i) => i.product_id);
+    const containers = await db("products")
+      .whereIn("id", productIds)
+      .andWhere("is_container", true)
+      .andWhere("business_id", req.user.business_id);
+
+    if (containers.length > 0 && !customer_id) {
+      return res.status(400).json({
+        message: "Para ventas con envases, debe seleccionar un cliente",
+      });
+    }
+  } catch (error) {
+    console.error("Error validando envases:", error);
+  }
+
   const trx = await db.transaction();
   try {
     // Obtener descuento por efectivo desde settings
@@ -179,8 +211,11 @@ exports.createSale = async (req, res) => {
 
       if (customer && !customer.name.toLowerCase().includes("cons. final")) {
         // Calcular cuánto pagó realmente (descontando el vuelto)
+        // SI ES CUENTA CORRIENTE PURA, ignoramos pagos parciales enviados para evitar errores de efectivo
         const netPaid =
-          parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+          payment_method === "Cta Cte"
+            ? 0
+            : parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
         const remainingDebt = total - netPaid; // Deuda después del pago en efectivo
 
         // Obtener el balance ANTES de esta venta para la condición
@@ -263,7 +298,7 @@ exports.createSale = async (req, res) => {
               .where({ id })
               .update({
                 credit_applied: creditUsed,
-                debt_amount: currentBalance > 0 ? currentBalance : null,
+                debt_amount: remainingDebt > 0 ? remainingDebt : null,
                 status: currentBalance > 0 ? "pendiente" : "completado",
                 settled_at: currentBalance <= 0 ? trx.fn.now() : null,
               });
@@ -288,18 +323,20 @@ exports.createSale = async (req, res) => {
             });
 
             // Actualizar credit_applied en la venta
-            await trx("sales").where({ id }).update({
-              credit_applied: creditUsed,
-              debt_amount: null,
-              status: "completado",
-              settled_at: trx.fn.now(),
-            });
+            await trx("sales")
+              .where({ id })
+              .update({
+                credit_applied: creditUsed,
+                debt_amount: remainingDebt > 0 ? remainingDebt : null, // Mantenemos la deuda original de la venta para control de caja
+                status: "completado", // Aunque tenga debt_amount, al estar cubierto por crédito el cliente no debe nada globalmente
+                settled_at: trx.fn.now(),
+              });
           } else {
             // Si no se aplicó crédito, actualizar la venta con la deuda actual
             await trx("sales")
               .where({ id })
               .update({
-                debt_amount: currentBalance > 0 ? currentBalance : null,
+                debt_amount: remainingDebt > 0 ? remainingDebt : null,
                 status: currentBalance > 0 ? "pendiente" : "completado",
                 settled_at: currentBalance <= 0 ? trx.fn.now() : null,
               });
@@ -331,6 +368,9 @@ exports.createSale = async (req, res) => {
 
       // 2. Si es envase y hay cliente, registrar préstamo
       if (product.is_container && customer_id) {
+        console.log(
+          `[ENVASES] Registrando préstamo: Producto=${product.name}, ClienteID=${customer_id}, Cantidad=${item.quantity}`,
+        );
         // Buscar balance actual
         const currentBalanceRec = await trx("container_balances")
           .where({
@@ -372,6 +412,9 @@ exports.createSale = async (req, res) => {
           description: `Préstamo en Venta #${id.substring(0, 8)}`,
           business_id: req.user.business_id,
         });
+        console.log(
+          `[ENVASES] Balance actualizado para ${product.name}: ${newBalance}`,
+        );
       }
     }
 
@@ -447,29 +490,43 @@ exports.getSalesStats = async (req, res) => {
       }),
     );
 
-    // 3. Asegurar que el primer elemento sea siempre HOY
-    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-    const todayStats = stats.find((s) => s.date === today);
+    // 3. Asegurar que el primer elemento sea siempre HOY (en horario local del servidor/negocio)
+    // Usamos una fecha local manual para evitar desfases de UTC
+    const now = new Date();
+    // Ajuste simple a UTC-3 (o la del servidor) para obtener el YYYY-MM-DD correcto
+    const offset = now.getTimezoneOffset() * 60000;
+    const localISOTime = new Date(now - offset).toISOString().split("T")[0];
+
+    // Normalizar todas las fechas de stats a string YYYY-MM-DD para comparación segura
+    const normalizedStats = stats.map((s) => ({
+      ...s,
+      date:
+        s.date instanceof Date
+          ? s.date.toISOString().split("T")[0]
+          : String(s.date),
+    }));
+
+    const todayStats = normalizedStats.find((s) => s.date === localISOTime);
 
     if (!todayStats) {
       // Si no hay ventas hoy, agregar un registro con ceros al inicio
-      stats.unshift({
-        date: today,
+      normalizedStats.unshift({
+        date: localISOTime,
         total_day: 0,
         profit_day: 0,
       });
       // Limitar a 7 días
-      if (stats.length > 7) {
-        stats.pop();
+      if (normalizedStats.length > 7) {
+        normalizedStats.pop();
       }
-    } else if (stats[0].date !== today) {
+    } else if (normalizedStats[0].date !== localISOTime) {
       // Si hay ventas hoy pero no es el primer elemento, reordenar
-      const index = stats.findIndex((s) => s.date === today);
-      const todayData = stats.splice(index, 1)[0];
-      stats.unshift(todayData);
+      const index = normalizedStats.findIndex((s) => s.date === localISOTime);
+      const todayData = normalizedStats.splice(index, 1)[0];
+      normalizedStats.unshift(todayData);
     }
 
-    res.json(stats);
+    res.json(normalizedStats);
   } catch (error) {
     console.error("Error en getSalesStats:", error);
     res.status(500).json({ message: "Error al obtener estadísticas" });
@@ -590,6 +647,20 @@ exports.savePendingSale = async (req, res) => {
   try {
     const cartData = JSON.stringify(cart);
 
+    // Validar si el cliente existe antes de guardar
+    let activeCustomerId = customer_id || null;
+    if (activeCustomerId) {
+      const customerExists = await db("customers")
+        .where({ id: activeCustomerId, business_id: req.user.business_id })
+        .first();
+      if (!customerExists) {
+        console.warn(
+          `savePendingSale: El cliente ${activeCustomerId} no existe o no pertenece al negocio. Guardando como null.`,
+        );
+        activeCustomerId = null;
+      }
+    }
+
     // Verificar si ya existe una venta en progreso para este usuario
     const existing = await db("pending_sales")
       .where({ user_id, business_id: req.user.business_id })
@@ -601,7 +672,7 @@ exports.savePendingSale = async (req, res) => {
         .where({ user_id, business_id: req.user.business_id })
         .update({
           cart_data: cartData,
-          customer_id: customer_id || null,
+          customer_id: activeCustomerId,
           payment_method: payment_method || "Efectivo",
           updated_at: db.fn.now(),
         });
@@ -611,7 +682,7 @@ exports.savePendingSale = async (req, res) => {
         user_id,
         business_id: req.user.business_id,
         cart_data: cartData,
-        customer_id: customer_id || null,
+        customer_id: activeCustomerId,
         payment_method: payment_method || "Efectivo",
       });
     }
@@ -861,6 +932,19 @@ exports.updateSale = async (req, res) => {
     change_given,
     created_at, // Opcional, por si se quiere cambiar la fecha
   } = req.body;
+  const user_id = req.user.id;
+  const business_id = req.user.business_id;
+
+  // Verificar si hay una caja abierta para este usuario
+  const openRegister = await db("cash_registers")
+    .where({ user_id, business_id, status: "open" })
+    .first();
+
+  if (!openRegister) {
+    return res.status(400).json({
+      message: "Debe abrir la caja antes de editar una venta",
+    });
+  }
 
   const trx = await db.transaction();
   try {
@@ -881,18 +965,54 @@ exports.updateSale = async (req, res) => {
         .json({ message: "No tienes permiso para editar esta venta" });
     }
 
+    // Validación: Si hay envases en los NUEVOS items, debe haber cliente
+    const productIdsInNewItems = items.map((i) => i.product_id);
+    const containerProducts = await trx("products")
+      .whereIn("id", productIdsInNewItems)
+      .andWhere("is_container", true)
+      .andWhere("business_id", req.user.business_id);
+
+    if (containerProducts.length > 0 && !customer_id) {
+      await trx.rollback();
+      return res.status(400).json({
+        message: "Para ventas con envases, debe seleccionar un cliente",
+      });
+    }
+
     const oldItems = await trx("sale_items").where({ sale_id: id });
     const oldCustomerId = oldSale.customer_id;
     const oldPaymentMethod = oldSale.payment_method;
     const oldTotal = parseFloat(oldSale.total);
     const oldCashDiscount = parseFloat(oldSale.cash_discount || 0);
 
-    // 2. Revertir Stock de items anteriores
+    // 2. Revertir Stock y balances de envases de items anteriores
     for (const item of oldItems) {
+      // Revertir Stock
       await trx("products")
         .where({ id: item.product_id, business_id: req.user.business_id })
         .increment("stock", item.quantity);
+
+      // Revertir Balance de Envases si corresponde
+      const product = await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .first();
+
+      if (product && product.is_container && oldCustomerId) {
+        console.log(
+          `[STOCK-ENVASES] Revirtiendo préstamo: Producto=${product.name}, StockActual=${product.stock}, Reversión=+${item.quantity}`,
+        );
+        await trx("container_balances")
+          .where({
+            customer_id: oldCustomerId,
+            product_id: item.product_id,
+            business_id: req.user.business_id,
+          })
+          .decrement("balance", item.quantity);
+      }
     }
+
+    // Limpiar transacciones de envases viejas
+    await trx("container_transactions").where({ sale_id: id }).delete();
 
     // 3. Calcular nueva venta (Copiar lógica de createSale)
     const cashDiscountSetting = await trx("settings")
@@ -1046,34 +1166,108 @@ exports.updateSale = async (req, res) => {
     await trx("sale_items").where({ sale_id: id }).delete();
     await trx("sale_items").insert(newSaleItems);
 
-    // 6. Actualizar Stock nuevo
+    // 6. Actualizar Stock nuevo e impactos de envases
     for (const item of items) {
+      const product = await trx("products")
+        .where({ id: item.product_id, business_id: req.user.business_id })
+        .first();
+
+      // Decrementar stock
       await trx("products")
         .where({ id: item.product_id, business_id: req.user.business_id })
         .decrement("stock", item.quantity);
+
+      // Impacto en Envases (Igual que en createSale)
+      if (product.is_container && customer_id) {
+        console.log(
+          `[STOCK-ENVASES] Nuevo préstamo: Producto=${product.name}, StockAnterior=${product.stock}, NuevoAjuste=-${item.quantity}`,
+        );
+        const currentBalanceRec = await trx("container_balances")
+          .where({
+            customer_id: customer_id,
+            product_id: item.product_id,
+            business_id: req.user.business_id,
+          })
+          .first();
+
+        let newBalance = 0;
+        if (!currentBalanceRec) {
+          newBalance = parseFloat(item.quantity);
+          await trx("container_balances").insert({
+            customer_id: customer_id,
+            product_id: item.product_id,
+            balance: newBalance,
+            business_id: req.user.business_id,
+          });
+        } else {
+          newBalance =
+            parseFloat(currentBalanceRec.balance) + parseFloat(item.quantity);
+          await trx("container_balances")
+            .where({ id: currentBalanceRec.id })
+            .update({
+              balance: newBalance,
+              updated_at: trx.fn.now(),
+            });
+        }
+
+        await trx("container_transactions").insert({
+          customer_id: customer_id,
+          product_id: item.product_id,
+          sale_id: id,
+          type: "loan",
+          amount: parseFloat(item.quantity),
+          balance_after: newBalance,
+          description: `Préstamo en Venta (Editada) #${id.substring(0, 8)}`,
+          business_id: req.user.business_id,
+        });
+        console.log(
+          `[ENVASES-EDIT] Balance actualizado para ${product.name}: ${newBalance}`,
+        );
+      }
     }
 
-    // 7. Gestionar Cuenta Corriente (Complejo)
-    // Borrar transacciones viejas de esta venta
-    await trx("customer_account_transactions").where({ sale_id: id }).delete();
-
-    // Nueva lógica de registro (simplificada pero robusta)
+    // 7. Gestionar Cuenta Corriente (Complejo y Robusto)
     if (customer_id) {
-      const netPaid =
+      const netPaidInEdit =
         parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
-      const currentBalanceResult = await trx("customer_account_transactions")
+
+      // Obtener transacciones EXISTENTES para esta venta
+      const existingTxs = await trx("customer_account_transactions")
+        .where({ sale_id: id })
+        .orderBy("created_at", "asc")
+        .orderBy("id", "asc");
+
+      // Separar la deuda original (debt) y los pagos posteriores (payment)
+      const debtTx = existingTxs.find((t) => t.type === "debt");
+      // Pagos vinculados (pueden ser el inicial de la venta original + cobros posteriores por ventanilla)
+      const paymentTxs = existingTxs.filter((t) => t.type === "payment");
+
+      // Calcular cuánto ya pagó el cliente para esta venta (excluyendo el pago inicial si vamos a "reemplazarlo" con netPaidInEdit)
+      // Pero mejor: tratamos a netPaidInEdit como el NUEVO pago inicial.
+      // Sumamos todos los pagos vinculados excepto el primero (si era el pago inicial original)
+      // Nota: Si la venta original fue 100% cta cte, el primer pago vinculado ya sería uno posterior.
+      // Para simplificar: Calculamos el total pagado por el cliente para esta factura hasta ahora.
+      const totalAlreadyPaid = paymentTxs.reduce(
+        (acc, t) => acc + parseFloat(t.amount || 0),
+        0,
+      );
+
+      // Borrar transacciones viejas de esta venta para recalcular balance limpio
+      await trx("customer_account_transactions")
+        .where({ sale_id: id })
+        .delete();
+
+      // Buscamos el balance anterior a esta venta
+      const prevTx = await trx("customer_account_transactions")
         .where({ customer_id, business_id: req.user.business_id })
-        .whereNot({ sale_id: id }) // No debería haber ninguna ya, pero por si acaso
         .where("created_at", "<", oldSale.created_at)
         .orderBy("created_at", "desc")
         .orderBy("id", "desc")
         .first();
 
-      let runningBalance = currentBalanceResult
-        ? parseFloat(currentBalanceResult.balance)
-        : 0;
+      let runningBalance = prevTx ? parseFloat(prevTx.balance) : 0;
 
-      // Insertar VENTA
+      // A. Insertar la nueva DEUDA (Total de la venta editada)
       runningBalance += total;
       await trx("customer_account_transactions").insert({
         customer_id,
@@ -1083,22 +1277,63 @@ exports.updateSale = async (req, res) => {
         balance: runningBalance,
         description: `Venta #${id.substring(0, 8)} (Editada)`,
         business_id: req.user.business_id,
-        created_at: oldSale.created_at, // Mantener fecha original
+        created_at: oldSale.created_at,
       });
 
-      // Insertar PAGO
-      if (netPaid > 0) {
-        runningBalance -= netPaid;
+      // B. Insertar el NUEVO PAGO inicial (si el cajero puso algo en la edición)
+      if (netPaidInEdit > 0) {
+        runningBalance -= netPaidInEdit;
         await trx("customer_account_transactions").insert({
           customer_id,
           sale_id: id,
           type: "payment",
-          amount: netPaid,
+          amount: netPaidInEdit,
           balance: runningBalance,
-          description: `Pago contado en Venta #${id.substring(0, 8)} (Editada)`,
+          description: `Pago en Venta #${id.substring(0, 8)} (Editada)`,
           business_id: req.user.business_id,
           created_at: oldSale.created_at,
+          payment_method: payment_method || "Efectivo",
         });
+      }
+
+      // C. Re-insertar los pagos POSTERIORES (si existían y no eran el inicial)
+      // Para saber si eran posteriores, simplemente los re-insertamos con su fecha original
+      // Si el usuario simplemente está editando productos, no queremos perder los cobros que ya hizo.
+      // IMPORTANTE: El pago inicial original suele tener la misma fecha que la venta.
+      // Los pagos por ventanilla suelen tener fecha posterior o ID mayor.
+      // Filtramos para NO REPETIR el pago inicial si ya lo pusimos en el punto B.
+      // Pero como borramos todo arriba, mejor re-insertamos los que no coincidan con la descripción de "pago contado".
+      // Una forma más segura: re-insertar todos los 'payment' que NO coincidan con la lógica de pago de la venta original.
+      // En SGM, el pago inicial se identifica porque tiene el mismo sale_id.
+      // Si el cliente cambió, estos pagos ya no aplican a este cliente.
+
+      let extraPaymentsFromBefore = 0;
+      if (oldCustomerId === customer_id) {
+        // Si es el mismo cliente, conservamos los pagos realizados por fuera de la pantalla de ventas (cobros de cta cte)
+        // que estaban vinculados a este sale_id.
+        for (const pTx of paymentTxs) {
+          // Si la descripción NO contiene "Pago contado en Venta" o similar, es un cobro posterior
+          // O si la fecha es distinta (pero a veces es el mismo día).
+          // Usualmente los pagos de Venta tienen una descripción específica.
+          if (
+            pTx.description.includes("Cobro de cuenta corriente") ||
+            !pTx.description.includes("Pago contado")
+          ) {
+            runningBalance -= parseFloat(pTx.amount);
+            await trx("customer_account_transactions").insert({
+              customer_id,
+              sale_id: id,
+              type: "payment",
+              amount: pTx.amount,
+              balance: runningBalance,
+              description: pTx.description,
+              business_id: req.user.business_id,
+              created_at: pTx.created_at,
+              payment_method: pTx.payment_method,
+            });
+            extraPaymentsFromBefore += parseFloat(pTx.amount);
+          }
+        }
       }
 
       // RECALCULAR balances posteriores para este cliente
@@ -1117,31 +1352,18 @@ exports.updateSale = async (req, res) => {
           .update({ balance: runningBalance });
       }
 
-      // Si el cliente cambió, también hay que recalcular para el viejo
+      // Si el cliente cambió, recalcular para el viejo (ya borramos sus tx vinculadas a esta venta)
       if (oldCustomerId && oldCustomerId !== customer_id) {
         const oldCustBalanceRes = await trx("customer_account_transactions")
           .where({
             customer_id: oldCustomerId,
             business_id: req.user.business_id,
           })
-          .where("created_at", "<", oldSale.created_at)
-          .orderBy("created_at", "desc")
-          .orderBy("id", "desc")
-          .first();
-
-        let oldRunningBalance = oldCustBalanceRes
-          ? parseFloat(oldCustBalanceRes.balance)
-          : 0;
-        const oldSubsequentTxs = await trx("customer_account_transactions")
-          .where({
-            customer_id: oldCustomerId,
-            business_id: req.user.business_id,
-          })
-          .where("created_at", ">=", oldSale.created_at) // Cambió el cliente, así que todas desde la fecha de venta
           .orderBy("created_at", "asc")
           .orderBy("id", "asc");
 
-        for (const tx of oldSubsequentTxs) {
+        let oldRunningBalance = 0;
+        for (const tx of oldCustBalanceRes) {
           if (tx.type === "debt") oldRunningBalance += parseFloat(tx.amount);
           else oldRunningBalance -= parseFloat(tx.amount);
           await trx("customer_account_transactions")
@@ -1149,28 +1371,31 @@ exports.updateSale = async (req, res) => {
             .update({ balance: oldRunningBalance });
         }
       }
+
+      // 8. Actualizar el objeto Sales con la deuda REAL restante
+      // La deuda es: Nuevo Total - Nuevo Pago inicial - Pagos anteriores conservados
+      const finalDebt = Math.max(
+        0,
+        total - netPaidInEdit - extraPaymentsFromBefore,
+      );
+
+      await trx("sales")
+        .where({ id })
+        .update({
+          customer_id: customer_id || null,
+          subtotal,
+          cash_discount: cashDiscount,
+          total,
+          payment_method: payment_method || "Efectivo",
+          amount_paid: amount_paid || null,
+          change_given: change_given || null,
+          debt_amount: finalDebt > 0.01 ? finalDebt : null,
+          status: finalDebt > 0.01 ? "pendiente" : "completado",
+          settled_at:
+            finalDebt <= 0.01 ? oldSale.settled_at || trx.fn.now() : null,
+          created_at: created_at || oldSale.created_at,
+        });
     }
-
-    // 8. Actualizar Objeto Venta
-    const netPaidFinal =
-      parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
-    const finalDebt = Math.max(0, total - netPaidFinal);
-
-    await trx("sales")
-      .where({ id })
-      .update({
-        customer_id: customer_id || null,
-        subtotal,
-        cash_discount: cashDiscount,
-        total,
-        payment_method: payment_method || "Efectivo",
-        amount_paid: amount_paid || null,
-        change_given: change_given || null,
-        debt_amount: finalDebt > 0 ? finalDebt : null,
-        status: finalDebt > 0 ? "pendiente" : "completado",
-        settled_at: finalDebt <= 0 ? trx.fn.now() : null,
-        created_at: created_at || oldSale.created_at,
-      });
 
     await trx.commit();
 

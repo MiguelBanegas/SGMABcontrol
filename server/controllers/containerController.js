@@ -59,7 +59,7 @@ exports.recordReturn = async (req, res) => {
         .json({ message: "La cantidad devuelta supera la deuda actual" });
     }
 
-    // 2. Actualizar balance
+    // 2. Actualizar balance y stock físico
     await trx("container_balances")
       .where({
         customer_id: customerId,
@@ -71,7 +71,15 @@ exports.recordReturn = async (req, res) => {
         updated_at: trx.fn.now(),
       });
 
+    // Incrementar stock físico del envase
+    await trx("products")
+      .where({ id: productId, business_id: business_id })
+      .increment("stock", amount);
+
     // 3. Registrar transacción
+    console.log(
+      `[ENVASES] Registrando devolución: ClienteID=${customerId}, ProductoID=${productId}, Cantidad=${amount}, BalanceAnterior=${currentBalance}`,
+    );
     await trx("container_transactions").insert({
       customer_id: customerId,
       product_id: productId,
@@ -81,6 +89,9 @@ exports.recordReturn = async (req, res) => {
       description: description || "Devolución manual de envases",
       business_id: business_id,
     });
+    console.log(
+      `[ENVASES] Nuevo balance tras devolución para ProductoID=${productId}: ${newBalance}`,
+    );
 
     await trx.commit();
     res.json({ message: "Devolución registrada con éxito", newBalance });

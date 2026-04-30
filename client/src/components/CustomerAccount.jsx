@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, ListGroup, Form, Button, Badge, InputGroup, Table, Alert } from 'react-bootstrap';
-import { CreditCard, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Printer, X, CheckCircle, Package, History, RefreshCcw } from 'lucide-react';
+import { CreditCard, Search, DollarSign, TrendingUp, TrendingDown, Calendar, Printer, X, CheckCircle, Package, History, RefreshCcw, Lock, Unlock } from 'lucide-react';
 import { Tabs, Tab } from 'react-bootstrap';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { useAuth } from '../context/AuthContext';
 
 const CustomerAccount = () => {
+  const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [summary, setSummary] = useState({ totalDebt: 0, customersWithDebt: 0 });
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -26,10 +28,28 @@ const CustomerAccount = () => {
   const [containerHistory, setContainerHistory] = useState([]);
   const [returnAmount, setReturnAmount] = useState('');
   const [selectedContainer, setSelectedContainer] = useState(null);
+  const [customerSelectedIndex, setCustomerSelectedIndex] = useState(0);
+  const [currentRegister, setCurrentRegister] = useState(null);
+  const [checkingRegister, setCheckingRegister] = useState(true);
 
   useEffect(() => {
     fetchCustomers();
+    fetchCurrentRegister();
   }, []);
+
+  const fetchCurrentRegister = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('/api/cash-registers/current', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCurrentRegister(response.data);
+    } catch (error) {
+      console.error('Error fetching register:', error);
+    } finally {
+      setCheckingRegister(false);
+    }
+  };
 
   const fetchCustomers = async () => {
     try {
@@ -114,6 +134,7 @@ const CustomerAccount = () => {
     setSelectedTransactionForPayment(transaction);
     setPaymentAmount(Number(amount).toFixed(2));
     setPaymentDescription(`Pago de deuda del ${formatDate(transaction.created_at)}`);
+    setSelectedDebts([]); // Limpiar selección múltiple para evitar confusiones
     
     // Scroll to form
     const formElement = document.getElementById('payment-form-card');
@@ -175,8 +196,10 @@ const CustomerAccount = () => {
         description: paymentDescription
       };
 
-      // Si hay deudas seleccionadas, enviamos el lote
-      if (selectedDebts.length > 0) {
+      // Lógica inteligente de selección
+      if (selectedDebts.length > 1) {
+        // Múltiples deudas seleccionadas: Se envían como lote (Batch)
+        // Nota: Esto usará el monto revalorizado completo de cada deuda, ignorando paymentAmount si no coinciden
         const batchPayments = transactions
           .filter(t => selectedDebts.includes(t.sale_id) && t.type === 'debt')
           .map(t => ({
@@ -186,7 +209,14 @@ const CustomerAccount = () => {
           }));
         
         payload.batchPayments = batchPayments;
+      } else if (selectedDebts.length === 1) {
+        // Una sola deuda seleccionada por checkbox: Tratar como pago individual
+        // Esto permite modificar el monto (pago parcial)
+        const debtId = selectedDebts[0];
+        payload.sale_id = debtId;
+        // payload.amount ya tiene el valor del input, permitiendo parciales
       } else if (selectedTransactionForPayment) {
+        // Pago iniciado desde botón individual
         payload.sale_id = selectedTransactionForPayment.sale_id;
       }
 
@@ -302,18 +332,38 @@ const CustomerAccount = () => {
                   <Form.Control
                     placeholder="Buscar cliente..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCustomerSelectedIndex(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setCustomerSelectedIndex(prev => Math.min(prev + 1, filteredCustomers.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setCustomerSelectedIndex(prev => Math.max(prev - 1, 0));
+                      } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (filteredCustomers.length > 0) {
+                          fetchTransactions(filteredCustomers[customerSelectedIndex].id);
+                        }
+                      }
+                    }}
                   />
                 </InputGroup>
               </div>
               <ListGroup variant="flush" style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                {filteredCustomers.map((customer) => (
+                {filteredCustomers.map((customer, index) => (
                   <ListGroup.Item
                     key={customer.id}
                     action
                     active={selectedCustomer?.id === customer.id}
-                    onClick={() => fetchTransactions(customer.id)}
-                    className="d-flex justify-content-between align-items-center"
+                    className={`d-flex justify-content-between align-items-center ${customerSelectedIndex === index && searchTerm ? 'bg-primary bg-opacity-10 border-primary' : ''}`}
+                    onClick={() => {
+                      setCustomerSelectedIndex(index);
+                      fetchTransactions(customer.id);
+                    }}
                   >
                     <div>
                       <div className="fw-bold">{customer.name}</div>
@@ -364,7 +414,27 @@ const CustomerAccount = () => {
                 className="mb-3 custom-tabs"
                 justify
               >
-                <Tab eventKey="account" title={<span><DollarSign size={18} className="me-1"/>Cuenta Pesos</span>}>
+                <Tab 
+                  eventKey="account" 
+                  title={<span><DollarSign size={18} className="me-1"/>Cuenta Pesos</span>}
+                >
+                  {!checkingRegister && !currentRegister && (
+                    <Alert variant={user?.role === 'admin' ? "info" : "danger"} className="mb-3 shadow-sm border-2">
+                      <div className="d-flex align-items-center gap-2 mb-2">
+                        {user?.role === 'admin' ? (
+                          <Unlock size={20} className="text-info" />
+                        ) : (
+                          <Lock size={20} className="text-danger" />
+                        )}
+                        <strong className="h5 mb-0">Caja Cerrada</strong>
+                      </div>
+                      <p className="mb-0">
+                        {user?.role === 'admin' 
+                          ? "Como administrador, puedes registrar pagos sin abrir caja. El dinero no se sumará a ningún arqueo."
+                          : "Debe abrir la caja para poder cobrar deudas de clientes."}
+                      </p>
+                    </Alert>
+                  )}
                   <Card id="payment-form-card" className="shadow-sm mb-3">
                 <Card.Header className="bg-success text-white">
                   <h5 className="mb-0">
@@ -373,6 +443,11 @@ const CustomerAccount = () => {
                   </h5>
                 </Card.Header>
                 <Card.Body>
+                  {!selectedTransactionForPayment && selectedDebts.length === 0 && (
+                    <Alert variant="warning" className="small py-2 mb-3">
+                      <strong>💡 Recomendación:</strong> Para que el historial sea más preciso, te recomendamos seleccionar las ventas específicas que el cliente está pagando usando los <strong>Checkboxes</strong> o el botón <strong>"Pagar"</strong> en la lista de abajo.
+                    </Alert>
+                  )}
                   {(paymentDescription.startsWith('Pago de deuda') || selectedDebts.length > 0) && (
                     <Alert variant="info" className="d-flex justify-content-between align-items-center mb-3">
                       <span>
@@ -428,7 +503,12 @@ const CustomerAccount = () => {
                         </Form.Group>
                       </Col>
                       <Col md={2} className="d-flex align-items-end">
-                        <Button type="submit" variant="success" className="w-100 mb-3" disabled={loading}>
+                        <Button 
+                          type="submit" 
+                          variant="success" 
+                          className="w-100 mb-3" 
+                          disabled={loading || (!currentRegister && !checkingRegister && user?.role !== 'admin')}
+                        >
                           {loading ? 'Guardando...' : 'Registrar'}
                         </Button>
                       </Col>
@@ -516,6 +596,7 @@ const CustomerAccount = () => {
                                     variant="success" 
                                     size="sm" 
                                     className="ms-2"
+                                    disabled={!currentRegister && !checkingRegister && user?.role !== 'admin'}
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleSelectDebtToPay(transaction, transaction.revalued_amount);
@@ -677,7 +758,20 @@ const CustomerAccount = () => {
                   </Card>
                 </Tab>
 
-                <Tab eventKey="containers" title={<span><Package size={18} className="me-1"/>Envases</span>}>
+                <Tab 
+                  eventKey="containers" 
+                  title={
+                    <div className="d-flex align-items-center gap-2">
+                       <Package size={18} />
+                       Envases
+                       {containerBalances.reduce((sum, b) => sum + (b.balance || 0), 0) > 0 && (
+                         <Badge bg="danger" pill style={{ fontSize: '0.7rem' }}>
+                           {containerBalances.reduce((sum, b) => sum + (b.balance || 0), 0)}
+                         </Badge>
+                       )}
+                    </div>
+                  }
+                >
                   <Row>
                     <Col md={4}>
                       <Card className="shadow-sm mb-3">

@@ -4,6 +4,7 @@ import { Camera, Upload, X, Plus, Trash2 } from 'lucide-react';
 import BarcodeScanner from './BarcodeScanner';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
+import { getImageUrl } from '../utils/imageUtils';
 
 const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, categories, editProduct, allProducts = [] }) => {
   const [nameMatches, setNameMatches] = useState([]);
@@ -60,7 +61,7 @@ const ProductModal = ({ show, handleClose, refreshProducts, refreshCategories, c
         promo_type: editProduct.promo_type || 'none',
         is_container: !!editProduct.is_container
       });
-      setPreview(editProduct.image_url ? `/uploads/${editProduct.image_url}` : null);
+      setPreview(getImageUrl(editProduct.image_url));
     } else {
       setFormData({ name: '', description: '', sku: '', price_buy: '', price_sell: '', stock: '', category_id: '', sell_by_weight: false, price_offer: '', is_offer: false, is_container: false });
       setPreview(null);

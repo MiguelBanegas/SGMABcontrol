@@ -228,7 +228,7 @@ const Admin = () => {
                 <tbody>
                   {stats.map((s, idx) => (
                     <tr key={idx}>
-                      <td>{new Date(s.date).toLocaleDateString()}</td>
+                      <td>{s.date.split('-').reverse().join('/')}</td>
                       <td className="fw-bold text-primary">${Number(s.total_day).toFixed(2)}</td>
                       <td className="fw-bold text-success">${Number(s.profit_day).toFixed(2)}</td>
                       <td><Badge bg="success">Procesado</Badge></td>

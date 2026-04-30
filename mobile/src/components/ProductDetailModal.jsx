@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Modal, Button, Row, Col, Badge, Form, InputGroup } from 'react-bootstrap';
-import { Package, Info, Plus, Minus, Check, Edit3, Camera, Upload, X } from 'lucide-react';
+import { Modal, Button, Row, Col, Badge, Form, InputGroup, Table, Alert, Spinner } from 'react-bootstrap';
+import { Package, X, Calendar, DollarSign, TrendingUp, Info, Plus, Minus, Check, Edit3, Camera, Upload } from 'lucide-react';
+import { getImageUrl } from '../utils/imageUtils';
 import { getServerUrl, getApiUrl } from '../utils/config';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -219,8 +220,10 @@ const ProductDetailModal = ({ show, handleClose, product }) => {
             </>
           ) : (
             <>
-              {product.image_url ? (
-                <img src={`${getServerUrl()}${product.image_url}`} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              {product.local_image ? (
+                <img src={product.local_image} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : product.image_url ? (
+                <img src={getImageUrl(product.image_url)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
               ) : (
                 <div className="w-100 h-100 d-flex flex-column align-items-center justify-content-center text-muted opacity-25">
                   <Package size={48} />

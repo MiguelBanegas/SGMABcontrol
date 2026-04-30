@@ -62,15 +62,30 @@ export const formatTicketAsText = (sale) => {
 export const shareTicketViaWhatsApp = async (sale) => {
   const text = formatTicketAsText(sale);
 
-  // Usamos el protocolo 'whatsapp://' en lugar de 'https://wa.me/' para intentar abrir la aplicación
-  // instalada directamente y evitar la ventana de WhatsApp Web.
-  let whatsappUrl = "whatsapp://send";
+  // Intentamos abrir la aplicación instalada directamente o usar wa.me como fallback robusto
+  let whatsappUrl = "";
 
   if (sale.customer_phone) {
-    const cleanPhone = sale.customer_phone.replace(/\D/g, "");
-    whatsappUrl += `?phone=${cleanPhone}&text=${encodeURIComponent(text)}`;
+    // 1. Limpiar todo lo que no sea número
+    let cleanPhone = sale.customer_phone.replace(/\D/g, "");
+
+    // 2. Lógica para Argentina: si tiene 10 dígitos (ej: 1130863418)
+    // se le debe anteponer el código de país 54 y el 9 (requerido por WA para móviles)
+    if (cleanPhone.length === 10) {
+      cleanPhone = "549" + cleanPhone;
+    } else if (cleanPhone.length === 11 && cleanPhone.startsWith("15")) {
+      // Caso 15 + 9 dígitos
+      cleanPhone = "549" + cleanPhone.substring(2);
+    } else if (cleanPhone.startsWith("9") && cleanPhone.length === 11) {
+      // Ya tiene el 9 pero no el 54
+      cleanPhone = "54" + cleanPhone;
+    }
+
+    // Usar wa.me que es universalmente compatible y maneja mejor el fallback entre app y web
+    whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
   } else {
-    whatsappUrl += `?text=${encodeURIComponent(text)}`;
+    // Si no hay teléfono, compartir texto plano (abrirá selector de contactos en móvil)
+    whatsappUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
   }
 
   window.open(whatsappUrl, "_blank");

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal } from 'react-bootstrap';
-import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer, TrendingUp, TrendingDown, Edit } from 'lucide-react';
+import { Row, Col, Card, Form, InputGroup, Button, Table, ListGroup, Badge, Modal, Alert } from 'react-bootstrap';
+import { MessageSquare, Search, Barcode, Trash2, Plus, Minus, ShoppingCart, Wifi, WifiOff, Printer, TrendingUp, TrendingDown, Edit, Package, Lock, Unlock } from 'lucide-react';
 import { db, syncCatalog, syncCustomers, updateLocalProducts } from '../db/localDb';
 import { syncOfflineSales } from '../db/syncManager';
 import axios from 'axios';
@@ -60,6 +60,8 @@ const Sales = () => {
   const [amountPaid, setAmountPaid] = useState('0');
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [customerBalance, setCustomerBalance] = useState(null);
+  const [selectedCustomerContainers, setSelectedCustomerContainers] = useState([]);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [autoWhatsApp, setAutoWhatsApp] = useState(() => {
     const saved = localStorage.getItem('auto_whatsapp');
     return saved === null ? false : saved === 'true';
@@ -90,6 +92,11 @@ const Sales = () => {
     amountPaid: '0'
   }]);
   const [activeTabId, setActiveTabId] = useState(1);
+  const [currentRegister, setCurrentRegister] = useState(null);
+  const [checkingRegister, setCheckingRegister] = useState(true);
+  const [showOpenRegisterModal, setShowOpenRegisterModal] = useState(false);
+  const [openingAmount, setOpeningAmount] = useState('');
+  const [openingRegisterLoading, setOpeningRegisterLoading] = useState(false);
   
   // Obtener la venta activa actual
   const activeTab = salesTabs.find(tab => tab.id === activeTabId) || salesTabs[0];
@@ -173,6 +180,56 @@ const Sales = () => {
       window.history.replaceState({}, document.title);
     }
   }, [location.state, customers]);
+
+  // Verificar caja abierta
+  useEffect(() => {
+    const fetchRegister = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get('/api/cash-registers/current', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setCurrentRegister(response.data);
+      } catch (error) {
+        console.error('Error fetching register:', error);
+      } finally {
+        setCheckingRegister(false);
+      }
+    };
+    fetchRegister();
+  }, []);
+
+  const handleOpenRegisterDirectly = async () => {
+    if (!openingAmount || parseFloat(openingAmount) < 0) {
+      toast.error('Ingresa un monto inicial válido');
+      return;
+    }
+
+    setOpeningRegisterLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post('/api/cash-registers/open', {
+        opening_amount: parseFloat(openingAmount)
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      toast.success('Caja abierta exitosamente');
+      setShowOpenRegisterModal(false);
+      setOpeningAmount('');
+      
+      // Actualizar el estado de la caja
+      const response = await axios.get('/api/cash-registers/current', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCurrentRegister(response.data);
+    } catch (error) {
+      console.error('Error opening register:', error);
+      toast.error(error.response?.data?.message || 'Error al abrir caja');
+    } finally {
+      setOpeningRegisterLoading(false);
+    }
+  };
   
   // Función para calcular precio efectivo según tipo de promoción
   const calculateItemPrice = (item) => {
@@ -946,16 +1003,34 @@ const Sales = () => {
     setCustomerSearch('');
     setCustomerResults([]);
     
-    // Fetch balance
+    // Fetch balance and containers
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/customer-accounts/${customer.id}/transactions`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setCustomerBalance(response.data.balance);
+      const [balanceRes, containersRes] = await Promise.all([
+        axios.get(`/api/customer-accounts/${customer.id}/transactions`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`/api/containers/customer/${customer.id}/balances`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      
+      setCustomerBalance(balanceRes.data.balance);
+      setSelectedCustomerContainers(containersRes.data);
+      
+      // Check if has pending containers
+      const hasPending = containersRes.data.some(b => b.balance > 0);
+      
+      // Update active tab with the flag
+      setSalesTabs(tabs => tabs.map(tab => 
+        tab.id === activeTabId 
+          ? { ...tab, customer, hasPendingContainers: hasPending }
+          : tab
+      ));
     } catch (err) {
-      console.error('Error fetching customer balance:', err);
+      console.error('Error fetching customer data:', err);
       setCustomerBalance(null);
+      setSelectedCustomerContainers([]);
     }
   };
 
@@ -1051,9 +1126,16 @@ const Sales = () => {
         }
       }
     } else {
-      // Para Cta Cte, el total va completo a deuda
+      // Para Cta Cte, el total va completo a deuda y el pago registrado es 0
       paid = 0;
       difference = -finalTotal;
+    }
+
+    // AJUSTE CRÍTICO: Si el pago es $0 y hay un cliente, la venta ES de Cuenta Corriente
+    // independiente de lo que diga el selector, para evitar descuentos por efectivo indebidos
+    let finalPaymentMethod = currentPaymentMethod;
+    if (paid === 0 && currentCustomer && !currentCustomer.name.toLowerCase().includes('cons. final')) {
+      finalPaymentMethod = 'Cta Cte';
     }
 
     // Si no hay cliente y no es Cta Cte, avisar una vez si el foco no está en el buscador de clientes
@@ -1075,13 +1157,13 @@ const Sales = () => {
           discount_amount: parseFloat(calc.savings) / item.quantity // Descuento unitario
         };
       }),
-      total: calculateTotal(currentCart) - (currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0),
+      total: calculateTotal(currentCart) - (finalPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0),
       subtotal: calculateTotal(currentCart),
-      cash_discount: currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0,
+      cash_discount: finalPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0,
       customer_id: currentCustomer?.id || null,
-      payment_method: currentPaymentMethod,
-      amount_paid: paid,
-      change_given: difference >= 0 ? difference : 0,
+      payment_method: finalPaymentMethod,
+      amount_paid: finalPaymentMethod === 'Cta Cte' ? 0 : paid,
+      change_given: finalPaymentMethod === 'Cta Cte' ? 0 : (difference >= 0 ? difference : 0),
       debt_amount: difference < 0 ? Math.abs(difference) : 0,
       created_at: new Date().toISOString()
     };
@@ -1176,9 +1258,14 @@ const Sales = () => {
       }
 
       // Notificación de éxito con opción de impresión manual
-      const successMessage = difference < 0 
-        ? `Venta registrada con deuda de $${Math.abs(difference).toFixed(2)}`
-        : `Venta realizada con éxito`;
+      let successMessage = `Venta realizada con éxito`;
+      if (finalPaymentMethod === 'Cta Cte') {
+        successMessage = `Venta registrada en CUENTA CORRIENTE ($${finalTotal.toFixed(2)})`;
+      } else if (difference < 0) {
+        successMessage = `Venta registrada con deuda de $${Math.abs(difference).toFixed(2)}`;
+      } else if (finalPaymentMethod === 'MP') {
+        successMessage = `Venta registrada con MERCADO PAGO`;
+      }
       
       toast.success((t) => (
         <span>
@@ -1243,7 +1330,8 @@ const Sales = () => {
       }
     } catch (err) {
       console.error(err);
-      toast.error('Error al procesar la venta');
+      const errorMessage = err.response?.data?.message || 'Error al procesar la venta';
+      toast.error(errorMessage);
     }
   };
 
@@ -1629,6 +1717,37 @@ const Sales = () => {
         </Col>
 
         <Col lg={4}>
+          {!checkingRegister && !currentRegister && (
+            <Alert variant="danger" className="mb-3 shadow-sm border-2">
+              <div className="d-flex align-items-center gap-2 mb-2">
+                <Lock size={20} className="text-danger" />
+                <strong className="h5 mb-0">Caja Cerrada</strong>
+              </div>
+              <p className="small mb-2">
+                Debe abrir la caja para poder registrar ventas.
+              </p>
+              <div className="d-flex flex-column gap-2">
+                <Button 
+                  variant="danger" 
+                  size="sm" 
+                  className="w-100 fw-bold"
+                  onClick={() => setShowOpenRegisterModal(true)}
+                >
+                  <Unlock size={16} className="me-2" />
+                  ABRIR CAJA AQUÍ
+                </Button>
+                <Button 
+                  variant="outline-danger" 
+                  size="sm" 
+                  className="w-100"
+                  onClick={() => navigate('/cash-register')}
+                >
+                  IR A MI CAJA
+                </Button>
+              </div>
+            </Alert>
+          )}
+
           <Card className="border-0 shadow-sm bg-dark text-white p-4 sticky-top" style={{ top: '2rem' }}>
             <div className="d-flex justify-content-between align-items-center mb-4">
               <h4 className="mb-0">Resumen</h4>
@@ -1781,7 +1900,7 @@ const Sales = () => {
                     </Button>
                   </div>
                   {customerBalance !== null && (
-                    <div className="d-flex align-items-center gap-2 mt-1">
+                    <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
                       {customerBalance < 0 ? (
                         <Badge bg="success" className="d-flex align-items-center py-1 px-2 border border-success border-opacity-50">
                           <TrendingDown size={12} className="me-1" />
@@ -1794,9 +1913,26 @@ const Sales = () => {
                         </Badge>
                       ) : (
                         <Badge bg="secondary" className="py-1 px-2 opacity-75">
-                          Sin deudas pendientes
+                          Sin deudas $
                         </Badge>
                       )}
+
+                      {activeTab.hasPendingContainers && (
+                        <Badge bg="warning" text="dark" className="d-flex align-items-center py-1 px-2 border border-warning">
+                          <Package size={12} className="me-1" />
+                          Debe envases
+                        </Badge>
+                      )}
+
+                      <Button 
+                        variant="outline-info" 
+                        size="sm" 
+                        className="py-0 px-2 d-flex align-items-center gap-1 border-0"
+                        onClick={() => setShowAccountModal(true)}
+                        style={{ height: '24px', fontSize: '0.75rem' }}
+                      >
+                        <Search size={12} /> Detalle
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1899,7 +2035,7 @@ const Sales = () => {
               variant={editingSaleId ? "warning" : "primary"} 
               size="lg" 
               className="w-100 py-3 fw-bold shadow"
-              disabled={cart.length === 0}
+              disabled={cart.length === 0 || (!currentRegister && !checkingRegister)}
               onClick={handleCheckout}
             >
               {editingSaleId ? 'GUARDAR CAMBIOS' : 'FINALIZAR VENTA (F10)'}
@@ -1936,6 +2072,49 @@ const Sales = () => {
         <Modal.Footer className="bg-dark border-secondary">
           <Button variant="secondary" onClick={() => setShowNoteModal(false)}>Cancelar</Button>
           <Button variant="warning" onClick={handleSendNote}>Enviar Aviso</Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Modal Apertura de Caja */}
+      <Modal show={showOpenRegisterModal} onHide={() => setShowOpenRegisterModal(false)} centered>
+        <Modal.Header closeButton className="bg-primary text-white">
+          <Modal.Title>Abrir Caja</Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="p-4">
+          <Form.Group>
+            <Form.Label className="fw-bold">Monto Inicial en Efectivo</Form.Label>
+            <InputGroup size="lg">
+              <InputGroup.Text className="bg-light border-end-0">$</InputGroup.Text>
+              <Form.Control
+                type="number"
+                step="0.01"
+                value={openingAmount}
+                onChange={(e) => setOpeningAmount(e.target.value)}
+                placeholder="0.00"
+                className="bg-light border-start-0"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleOpenRegisterDirectly();
+                }}
+              />
+            </InputGroup>
+            <Form.Text className="text-muted mt-2 d-block">
+              Ingresa el dinero físico con el que inicias el turno.
+            </Form.Text>
+          </Form.Group>
+        </Modal.Body>
+        <Modal.Footer className="border-0 p-4 pt-0">
+          <Button variant="outline-secondary" onClick={() => setShowOpenRegisterModal(false)} className="px-4 border-0">
+            Cancelar
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleOpenRegisterDirectly}
+            disabled={openingRegisterLoading || !openingAmount}
+            className="px-5 fw-bold shadow-sm"
+          >
+            {openingRegisterLoading ? 'Abriendo...' : 'Abrir Caja Ahora'}
+          </Button>
         </Modal.Footer>
       </Modal>
 
@@ -2029,6 +2208,91 @@ const Sales = () => {
             <Button variant="primary" type="submit">Agregar al Carrito</Button>
           </Modal.Footer>
         </Form>
+      </Modal>
+
+      {/* Modal de Resumen de Cuenta */}
+      <Modal show={showAccountModal} onHide={() => setShowAccountModal(false)} centered size="lg">
+        <Modal.Header closeButton className="bg-dark text-white border-secondary">
+          <Modal.Title>
+            <div className="d-flex align-items-center gap-2">
+              <User size={24} className="text-info" />
+              <span>Estado de Cuenta: {selectedCustomer?.name}</span>
+            </div>
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body className="bg-dark text-white">
+          <Row className="mb-4">
+            <Col md={12}>
+              <Card className="bg-dark border-secondary shadow-sm">
+                <Card.Body className="p-3">
+                  <div className="d-flex justify-content-between align-items-center">
+                    <div>
+                      <h6 className="text-muted mb-1 small uppercase">Saldo Total en Pesos</h6>
+                      <h2 className={customerBalance > 0 ? 'text-danger' : 'text-success'}>
+                        ${Number(customerBalance || 0).toFixed(2)}
+                      </h2>
+                    </div>
+                    <div>
+                      {customerBalance > 0 ? (
+                        <Badge bg="danger" className="p-2">CLIENTE DEUDOR</Badge>
+                      ) : (
+                        <Badge bg="success" className="p-2">CUENTA AL DÍA</Badge>
+                      )}
+                    </div>
+                  </div>
+                </Card.Body>
+              </Card>
+            </Col>
+          </Row>
+
+          <h5 className="mb-3 d-flex align-items-center gap-2">
+            <Package size={20} className="text-warning" />
+            Envases Pendientes
+          </h5>
+          
+          <div className="table-responsive">
+            <Table variant="dark" hover className="border-secondary mb-0">
+              <thead className="table-dark border-secondary">
+                <tr>
+                  <th>Envase/Producto</th>
+                  <th className="text-center">Deuda Actual</th>
+                </tr>
+              </thead>
+              <tbody className="border-secondary">
+                {selectedCustomerContainers.length > 0 ? (
+                  selectedCustomerContainers
+                    .filter(b => b.balance > 0)
+                    .map((b, idx) => (
+                      <tr key={idx} className="border-secondary align-middle">
+                        <td>{b.product_name}</td>
+                        <td className="text-center">
+                          <Badge bg="danger" pill className="fs-6 px-3">{b.balance} unidades</Badge>
+                        </td>
+                      </tr>
+                    ))
+                ) : (
+                  <tr>
+                    <td colSpan="2" className="text-center py-4 text-muted">
+                      No hay deudas de envases para este cliente.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </Table>
+          </div>
+        </Modal.Body>
+        <Modal.Footer className="bg-dark border-secondary">
+          <Button variant="secondary" onClick={() => setShowAccountModal(false)}>Cerrar</Button>
+          <Button 
+            variant="primary" 
+            onClick={() => {
+              setShowAccountModal(false);
+              navigate('/cuenta-corriente', { state: { customerId: selectedCustomer.id } });
+            }}
+          >
+            Ir a Cuenta Corriente Completa
+          </Button>
+        </Modal.Footer>
       </Modal>
       
     </div>

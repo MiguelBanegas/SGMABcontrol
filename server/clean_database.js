@@ -41,9 +41,9 @@ async function cleanDatabase() {
     // const deletedPriceHistory = await knex("product_price_history").del();
     // console.log(`   ✅ ${deletedPriceHistory} registros de precios eliminados\n`);
 
-    // console.log("🧾 Eliminando ventas pendientes...");
-    // const deletedPending = await knex("pending_sales").del();
-    // console.log(`   ✅ ${deletedPending} ventas pendientes eliminadas\n`);
+    console.log("🧾 Eliminando ventas pendientes...");
+    const deletedPending = await knex("pending_sales").del();
+    console.log(`   ✅ ${deletedPending} ventas pendientes eliminadas\n`);
 
     // console.log("💳 Eliminando cuentas corrientes...");
     // const deletedAccounts = await knex("customer_accounts").del();

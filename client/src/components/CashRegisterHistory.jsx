@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Button, Row, Col, Table, Badge, Modal } from 'react-bootstrap';
+import { Card, Form, Button, Row, Col, Table, Badge, Modal, Alert } from 'react-bootstrap';
 import { Calendar, Eye, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -342,10 +342,16 @@ const CashRegisterHistory = () => {
                     <td>Ventas en Efectivo</td>
                     <td className="text-end">+${parseFloat(selectedRegister.cash_sales || 0).toFixed(2)}</td>
                   </tr>
-                  {parseFloat(selectedRegister.account_payments || 0) > 0 && (
+                  {parseFloat(selectedRegister.account_payments_cash || 0) > 0 && (
                     <tr className="table-success">
-                      <td>Cobros de Cuenta Corriente</td>
-                      <td className="text-end">+${parseFloat(selectedRegister.account_payments || 0).toFixed(2)}</td>
+                      <td>Cobros de Cuenta Corriente (Efectivo)</td>
+                      <td className="text-end">+${parseFloat(selectedRegister.account_payments_cash || 0).toFixed(2)}</td>
+                    </tr>
+                  )}
+                  {parseFloat(selectedRegister.inflows || 0) > 0 && (
+                    <tr className="table-success">
+                      <td>Ingresos Extras</td>
+                      <td className="text-end">+${parseFloat(selectedRegister.inflows).toFixed(2)}</td>
                     </tr>
                   )}
                   {parseFloat(selectedRegister.expenses || 0) > 0 && (
@@ -440,7 +446,12 @@ const CashRegisterHistory = () => {
                       {parseFloat(selectedRegister.account_payments || 0) > 0 && (
                         <tr>
                           <td>Cobros realizados</td>
-                          <td className="text-end text-success">-${parseFloat(selectedRegister.account_payments).toFixed(2)}</td>
+                          <td className="text-end text-success">
+                            -${parseFloat(selectedRegister.account_payments).toFixed(2)}
+                            <div className="small text-muted" style={{ fontSize: '0.75rem' }}>
+                              (${parseFloat(selectedRegister.account_payments_cash || 0).toFixed(2)} efectivo / ${(parseFloat(selectedRegister.account_payments || 0) - parseFloat(selectedRegister.account_payments_cash || 0)).toFixed(2)} otros)
+                            </div>
+                          </td>
                         </tr>
                       )}
                       <tr className="table-warning fw-bold">
@@ -455,21 +466,32 @@ const CashRegisterHistory = () => {
                 </>
               )}
 
-              <h6 className="mb-3 text-dark mt-4">📊 RESUMEN TOTAL</h6>
-              <Table bordered>
-                <tbody>
-                  <tr className="table-dark text-white fw-bold">
-                    <td>Total Vendido en la Jornada</td>
-                    <td className="text-end">${parseFloat(selectedRegister.total_sales || 0).toFixed(2)}</td>
-                  </tr>
-                </tbody>
-              </Table>
+              <h6 className="mb-3 text-dark mt-4">📊 RESUMEN FINAL</h6>
+              <Card className="border-0 bg-light">
+                <Card.Body className="text-center py-4">
+                  <div className="mb-3">
+                    <h6 className="text-muted mb-1">Total Vendido</h6>
+                    <h5 className="fw-bold">${parseFloat(selectedRegister.total_sales || 0).toFixed(2)}</h5>
+                  </div>
+                  <hr className="my-3 opacity-25" />
+                  <div>
+                    <h6 className="text-primary mb-1 fw-bold">EFECTIVO ESPERADO EN CAJA</h6>
+                    <h3 className="fw-bold text-primary mb-0">
+                      ${parseFloat(selectedRegister.expected_amount || 0).toFixed(2)}
+                    </h3>
+                  </div>
+                </Card.Body>
+              </Card>
 
               {selectedRegister.notes && (
-                <>
-                  <h6 className="mb-2">Notas:</h6>
-                  <p className="text-muted">{selectedRegister.notes}</p>
-                </>
+                <div className="mt-4">
+                  <h6 className="mb-2 text-muted fw-bold">📝 OBSERVACIONES DE CIERRE:</h6>
+                  <Alert variant="light" className="border shadow-sm mb-0">
+                    <p className="mb-0 italic" style={{ whiteSpace: 'pre-wrap' }}>
+                      {selectedRegister.notes}
+                    </p>
+                  </Alert>
+                </div>
               )}
 
               {selectedRegister.movements && selectedRegister.movements.length > 0 && (

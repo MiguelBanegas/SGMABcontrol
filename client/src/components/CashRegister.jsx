@@ -249,10 +249,16 @@ const CashRegister = () => {
                 <td>Ventas en efectivo</td>
                 <td className="text-end">+${cashSales.toFixed(2)}</td>
               </tr>
-              {accountPayments > 0 && (
+              {currentRegister.current_account_payments_cash > 0 && (
                 <tr className="table-success">
-                  <td>Cobros de Cuenta Corriente</td>
-                  <td className="text-end">+${accountPayments.toFixed(2)}</td>
+                  <td>Cobros de Cuenta Corriente (Efectivo)</td>
+                  <td className="text-end">+${parseFloat(currentRegister.current_account_payments_cash).toFixed(2)}</td>
+                </tr>
+              )}
+              {parseFloat(currentRegister.inflows || 0) > 0 && (
+                <tr className="table-success">
+                  <td>Ingresos Extras</td>
+                  <td className="text-end">+${parseFloat(currentRegister.inflows).toFixed(2)}</td>
                 </tr>
               )}
               {expenses > 0 && (
@@ -331,7 +337,12 @@ const CashRegister = () => {
                 {accountPayments > 0 && (
                   <tr>
                     <td>Cobros realizados</td>
-                    <td className="text-end text-success">-${accountPayments.toFixed(2)}</td>
+                    <td className="text-end text-success">
+                      -${accountPayments.toFixed(2)}
+                      <div className="small text-muted" style={{ fontSize: '0.75rem' }}>
+                        (${parseFloat(currentRegister.current_account_payments_cash).toFixed(2)} efectivo / ${(accountPayments - currentRegister.current_account_payments_cash).toFixed(2)} otros)
+                      </div>
+                    </td>
                   </tr>
                 )}
                 <tr className="table-warning fw-bold">
@@ -349,18 +360,35 @@ const CashRegister = () => {
       {/* Resumen Total */}
       <Card className="shadow-sm mb-3">
         <Card.Header className="bg-dark text-white">
-          <h6 className="mb-0">📊 RESUMEN TOTAL DE LA JORNADA</h6>
+          <h6 className="mb-0">📊 RESUMEN FINAL</h6>
         </Card.Header>
-        <Card.Body className="text-center">
-          <h3 className="mb-0">Total Vendido: ${totalSales.toFixed(2)}</h3>
-          <small className="text-muted">
-            Incluye todos los métodos de pago y cuenta corriente
-          </small>
+        <Card.Body className="text-center py-4">
+          <div className="mb-3">
+            <h5 className="text-muted mb-1">Total Vendido</h5>
+            <h4 className="fw-bold">${totalSales.toFixed(2)}</h4>
+            <small className="text-muted">(Incluye todos los medios y cuenta corriente)</small>
+          </div>
+          <hr className="my-3 opacity-25" />
+          <div>
+            <h5 className="text-primary mb-1">EFECTIVO ESPERADO EN CAJA</h5>
+            <h2 className="fw-bold text-primary mb-0">${expectedAmount.toFixed(2)}</h2>
+            <small className="text-muted">Monto físico que debería haber en el cajón</small>
+          </div>
         </Card.Body>
       </Card>
 
       {/* Botones de acción */}
       <div className="d-flex gap-2 flex-wrap">
+        <Button 
+          variant="outline-success"
+          onClick={() => {
+            setMovementType('inflow');
+            setShowMovementModal(true);
+          }}
+        >
+          <Plus size={18} className="me-2" />
+          Ingresar Efectivo
+        </Button>
         <Button 
           variant="outline-danger" 
           onClick={() => {
@@ -452,8 +480,9 @@ const CashRegister = () => {
       <Modal show={showMovementModal} onHide={() => setShowMovementModal(false)}>
         <Modal.Header closeButton>
           <Modal.Title>
-            {movementType === 'expense' ? 'Registrar Gasto' : 'Registrar Retiro'}
-          </Modal.Title>
+          {movementType === 'expense' ? 'Registrar Gasto' : 
+           movementType === 'withdrawal' ? 'Registrar Retiro' : 'Ingresar Efectivo'}
+        </Modal.Title>
         </Modal.Header>
         <Modal.Body>
           <Form.Group className="mb-3">
@@ -478,7 +507,9 @@ const CashRegister = () => {
               value={movementDescription}
               onChange={(e) => setMovementDescription(e.target.value)}
               placeholder={
-                movementType === 'expense' ? 'Ej: Compra de bolsas' : 'Ej: Retiro para banco'
+                movementType === 'expense' ? 'Ej: Compra de bolsas' : 
+                movementType === 'withdrawal' ? 'Ej: Retiro para banco' :
+                'Ej: Reposición de cambio'
               }
             />
           </Form.Group>
@@ -488,7 +519,10 @@ const CashRegister = () => {
             Cancelar
           </Button>
           <Button 
-            variant={movementType === 'expense' ? 'danger' : 'warning'}
+            variant={
+              movementType === 'expense' ? 'danger' : 
+              movementType === 'withdrawal' ? 'warning' : 'success'
+            }
             onClick={handleAddMovement}
             disabled={loading || !movementAmount || !movementDescription}
           >

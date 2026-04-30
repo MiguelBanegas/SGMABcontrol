@@ -5,6 +5,7 @@ import axios from 'axios';
 import { getApiUrl, getServerUrl, isVpsConnection } from '../utils/config';
 import socket from '../socket';
 import { useAuth } from '../context/AuthContext';
+import { getImageUrl } from '../utils/imageUtils';
 import { Link } from 'react-router-dom';
 import { BarcodeScanner as CapBarcodeScanner } from '@capacitor-mlkit/barcode-scanning';
 import ProductDetailModal from './ProductDetailModal';
@@ -406,17 +407,25 @@ const Stock = () => {
                     className="bg-white rounded-3 p-2 shadow-sm border-start border-4 border-primary d-flex align-items-center"
                     onClick={() => handleProductClick(product)}
                   >
-                    <div style={{ width: '50px', height: '50px', borderRadius: '8px', backgroundColor: '#f8f9fa', overflow: 'hidden', marginRight: '12px', flexShrink: 0 }}>
-                       {product.local_image ? (
-                         <img src={product.local_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                       ) : product.image_url ? (
-                         <img src={`${getServerUrl()}${product.image_url}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                       ) : (
-                         <div className="w-100 h-100 d-flex align-items-center justify-content-center text-muted opacity-25">
-                           <Package size={24} />
-                         </div>
-                       )}
-                    </div>
+                  <div style={{ height: '80px', width: '80px', flexShrink: 0 }}>
+                    {product.local_image ? (
+                      <img 
+                        src={product.local_image} 
+                        alt={product.name}
+                        className="w-100 h-100 object-fit-cover rounded"
+                      />
+                    ) : product.image_url ? (
+                      <img 
+                        src={getImageUrl(product.image_url)} 
+                        alt={product.name}
+                        className="w-100 h-100 object-fit-cover rounded"
+                      />
+                    ) : (
+                      <div className="w-100 h-100 bg-light rounded d-flex align-items-center justify-content-center text-muted">
+                        <ImageIcon size={24} />
+                      </div>
+                    )}
+                  </div>
                     <div className="flex-grow-1 overflow-hidden">
                       <div className="d-flex justify-content-between align-items-start">
                         <div className="flex-grow-1 overflow-hidden">
