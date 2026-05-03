@@ -1,10 +1,17 @@
 const getServerUrl = () => {
+  // En desarrollo, priorizamos el .env sobre localStorage
+  if (import.meta.env.DEV) {
+    const envUrl = import.meta.env.VITE_API_URL;
+    if (envUrl) return envUrl;
+  }
+
+  // Si no estamos en desarrollo o no hay .env, usamos localStorage
   const savedUrl = localStorage.getItem("SERVER_URL");
   if (savedUrl) return savedUrl;
 
-  // En desarrollo (Vite), si no hay URL guardada, usamos localhost:5059
+  // En desarrollo (Vite), fallback por defecto
   if (import.meta.env.DEV) {
-    return "http://localhost:5059";
+    return "http://localhost:5051";
   }
 
   // En producción, usamos el origen actual (dominio o IP)

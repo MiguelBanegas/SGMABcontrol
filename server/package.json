@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "set PORT=5059 && nodemon index.js",
+    "dev": "nodemon index.js",
     "start": "node index.js",
     "migrate:prod": "knex migrate:latest --env production",
     "seed:prod": "knex seed:run --env production",

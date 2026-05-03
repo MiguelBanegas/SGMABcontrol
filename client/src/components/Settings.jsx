@@ -54,22 +54,11 @@ const Settings = () => {
   const handleBackup = async () => {
     setBackingUp(true);
     try {
-      const response = await axios({
-        url: '/api/db/backup',
-        method: 'GET',
-        responseType: 'blob', // importante para tratar la respuesta como archivo
+      const response = await axios.get('/api/db/backup');
+      
+      toast.success(`Respaldo generado exitosamente y guardado en: ${response.data.filePath}`, {
+        duration: 5000
       });
-
-      // Crear un enlace para descargar el archivo
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      link.setAttribute('download', `sgm_backup_${timestamp}.sql`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      toast.success('Respaldo generado y descargado con éxito');
     } catch (error) {
       console.error('Error al generar respaldo:', error);
       toast.error('Error al generar respaldo de la base de datos');
@@ -268,8 +257,8 @@ const Settings = () => {
             <div className="col-md-6 mb-4">
               <h6 className="fw-bold">Generar Copia de Seguridad</h6>
               <p className="text-muted small">
-                Crea una copia completa de la base de datos actual. 
-                El archivo descargado podrá ser usado para restaurar el sistema en caso de fallas.
+                Crea una copia completa de la base de datos actual en formato .dump. 
+                El archivo se guarda automáticamente en la carpeta del servidor.
               </p>
               <Button 
                 variant="outline-primary" 
@@ -284,8 +273,8 @@ const Settings = () => {
                   </>
                 ) : (
                   <>
-                    <Download size={20} className="me-2" />
-                    Descargar Respaldo (SQL)
+                    <Database size={20} className="me-2" />
+                    Generar Respaldo (.dump)
                   </>
                 )}
               </Button>
@@ -294,14 +283,14 @@ const Settings = () => {
             <div className="col-md-6 mb-4">
               <h6 className="fw-bold">Restaurar Base de Datos</h6>
               <p className="text-muted small">
-                Sube un archivo de respaldo previamente generado (.sql) para sobrescribir la base de datos actual.
+                Sube un archivo de respaldo previamente generado (.sql o .dump) para sobrescribir la base de datos actual.
               </p>
               <Form onSubmit={handleRestore}>
                 <Form.Group className="mb-3">
                   <Form.Control 
                     type="file" 
                     id="restore-file-input"
-                    accept=".sql,.backup"
+                    accept=".sql,.dump,.backup"
                     onChange={(e) => setSelectedFile(e.target.files[0])}
                     disabled={restoring}
                   />

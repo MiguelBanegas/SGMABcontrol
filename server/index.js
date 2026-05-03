@@ -1,9 +1,10 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const os = require("os");
 
 console.log(
   ">>> SISTEMA INICIADO: Versión 1.5.0 - Puerto:",
-  process.env.PORT || 5058,
+  process.env.PORT || 5051,
 );
 const express = require("express");
 const cors = require("cors");
@@ -18,7 +19,6 @@ const printRoutes = require("./routes/printRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
 const cashRegisterRoutes = require("./routes/cashRegisterRoutes");
 const { startSpooler } = require("./services/printService");
-const path = require("path");
 
 // Detectar la IP local para que Bonjour publique en la interfaz correcta (evitar WSL)
 const getLocalIp = () => {
@@ -53,7 +53,7 @@ app.set("io", io);
 app.set("version", WEB_VERSION);
 app.set("mobile_version", MOBILE_VERSION);
 
-const PORT = process.env.PORT || 5058;
+const PORT = process.env.PORT || 5051;
 const fs = require("fs");
 // Asegurar que la carpeta de subidas exista
 const uploadsDir = path.join(__dirname, "uploads");
@@ -140,11 +140,18 @@ server.listen(PORT, "0.0.0.0", () => {
 
   // Publicar el servidor en la red local vía mDNS (Bonjour)
   try {
-    bonjour.publish({
-      name: "sgm",
+    const service = bonjour.publish({
+      name: `sgm-${PORT}`,
       type: "http",
       port: PORT,
     });
+
+    // Manejar errores asíncronos del servicio Bonjour
+    service.on('error', (error) => {
+      console.error("Error asíncrono en servicio Bonjour:", error.message);
+      // No terminamos el proceso, solo logueamos
+    });
+
     console.log(
       `Servicio Servidor-Node publicado vía Bonjour en puerto ${PORT}`,
     );
