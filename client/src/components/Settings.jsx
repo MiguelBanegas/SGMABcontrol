@@ -15,10 +15,13 @@ const Settings = () => {
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [serverBackups, setServerBackups] = useState([]);
+  const [loadingBackups, setLoadingBackups] = useState(false);
 
 
   useEffect(() => {
     loadSettings();
+    loadServerBackups();
   }, []);
 
   const loadSettings = async () => {
@@ -30,6 +33,18 @@ const Settings = () => {
       console.error('Error al cargar configuración:', error);
       toast.error('Error al cargar configuración');
       setLoading(false);
+    }
+  };
+
+  const loadServerBackups = async () => {
+    setLoadingBackups(true);
+    try {
+      const response = await axios.get('/api/db/backups');
+      setServerBackups(response.data);
+    } catch (error) {
+      console.error('Error al cargar backups del servidor:', error);
+    } finally {
+      setLoadingBackups(false);
     }
   };
 
@@ -59,11 +74,37 @@ const Settings = () => {
       toast.success(`Respaldo generado exitosamente y guardado en: ${response.data.filePath}`, {
         duration: 5000
       });
+      loadServerBackups(); // Recargar lista
     } catch (error) {
       console.error('Error al generar respaldo:', error);
       toast.error('Error al generar respaldo de la base de datos');
     } finally {
       setBackingUp(false);
+    }
+  };
+
+  const handleDownload = (fileName) => {
+    window.open(`/api/db/download/${fileName}`, '_blank');
+  };
+
+  const handleRestoreFromServer = async (fileName) => {
+    if (!window.confirm(`¿Está seguro de que desea restaurar desde el archivo "${fileName}"? Se sobrescribirán todos los datos actuales.`)) {
+      return;
+    }
+
+    setRestoring(true);
+    try {
+      await axios.post('/api/db/restore-server', { fileName });
+      toast.success('Base de datos restaurada con éxito. El sistema se reiniciará...', {
+        duration: 3000,
+        icon: '🔄'
+      });
+      setTimeout(() => window.location.reload(), 3000);
+    } catch (error) {
+      console.error('Error al restaurar desde servidor:', error);
+      toast.error('Error al restaurar desde el servidor');
+    } finally {
+      setRestoring(false);
     }
   };
 
@@ -264,7 +305,7 @@ const Settings = () => {
                 variant="outline-primary" 
                 onClick={handleBackup}
                 disabled={backingUp}
-                className="w-100 py-3"
+                className="w-100 py-3 mb-3"
               >
                 {backingUp ? (
                   <>
@@ -278,10 +319,53 @@ const Settings = () => {
                   </>
                 )}
               </Button>
+
+              <h6 className="fw-bold mt-4 mb-3">Backups en el Servidor</h6>
+              <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                {loadingBackups ? (
+                  <div className="text-center p-3">Cargando lista...</div>
+                ) : serverBackups.length === 0 ? (
+                  <div className="text-center text-muted p-3 border rounded">No hay backups guardados</div>
+                ) : (
+                  <div className="list-group shadow-sm">
+                    {serverBackups.map((backup) => (
+                      <div key={backup.name} className="list-group-item list-group-item-action d-flex flex-column gap-2">
+                        <div className="d-flex justify-content-between align-items-center">
+                          <div className="text-truncate" style={{ maxWidth: '70%' }}>
+                            <div className="fw-bold small">{backup.name}</div>
+                            <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                              {new Date(backup.createdAt).toLocaleString()} - {(backup.size / 1024 / 1024).toFixed(2)} MB
+                            </div>
+                          </div>
+                          <div className="d-flex gap-1">
+                            <Button 
+                              size="sm" 
+                              variant="outline-success" 
+                              title="Descargar a PC"
+                              onClick={() => handleDownload(backup.name)}
+                            >
+                              <Download size={14} />
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline-danger" 
+                              title="Restaurar este backup"
+                              onClick={() => handleRestoreFromServer(backup.name)}
+                              disabled={restoring}
+                            >
+                              <Database size={14} />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="col-md-6 mb-4">
-              <h6 className="fw-bold">Restaurar Base de Datos</h6>
+              <h6 className="fw-bold">Restaurar desde PC (Subir archivo)</h6>
               <p className="text-muted small">
                 Sube un archivo de respaldo previamente generado (.sql o .dump) para sobrescribir la base de datos actual.
               </p>
@@ -309,7 +393,7 @@ const Settings = () => {
                   ) : (
                     <>
                       <Upload size={20} className="me-2" />
-                      Iniciar Restauración
+                      Subir y Restaurar
                     </>
                   )}
                 </Button>

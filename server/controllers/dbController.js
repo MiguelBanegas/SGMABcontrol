@@ -109,7 +109,14 @@ exports.backupDatabase = async (req, res) => {
     const timestamp = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
 
     const fileName = `sgm_backup_${timestamp}.dump`;
-    const filePath = path.join(process.cwd(), fileName);
+    // Asegurar que la carpeta de backups exista en la raíz del servidor
+    const backupsDir = path.join(process.cwd(), "backups");
+    if (!fs.existsSync(backupsDir)) {
+      fs.mkdirSync(backupsDir);
+      console.log("Carpeta 'backups' creada correctamente");
+    }
+    
+    const filePath = path.join(backupsDir, fileName);
 
     const dbName = process.env.DB_NAME || "sgm_db";
     const dbUser = process.env.DB_USER || "postgres";
@@ -120,7 +127,7 @@ exports.backupDatabase = async (req, res) => {
 
     const command = `"${PG_DUMP}" -h ${dbHost} -p ${dbPort} -U ${dbUser} -Fc -Z9 -b -v -f "${filePath}" ${dbName}`;
 
-    console.log("Ejecutando backup (Windows compatible)...");
+    console.log("Ejecutando backup...");
 
     exec(command, {
       env: { ...process.env, PGPASSWORD: dbPassword }
@@ -134,17 +141,19 @@ exports.backupDatabase = async (req, res) => {
         });
       }
 
-      console.log("Backup generado:", filePath);
+      console.log("Backup generado con éxito en:", filePath);
 
-      res.download(filePath, fileName, (err) => {
-        if (err) console.error("Error al descargar:", err);
-        fs.unlinkSync(filePath);
+      // Responder con JSON para que el frontend pueda mostrar la ruta
+      res.json({
+        message: "Backup guardado exitosamente",
+        filePath: filePath,
+        fileName: fileName
       });
     });
 
   } catch (error) {
     console.error("Error en backupDatabase:", error);
-    res.status(500).json({ error: "Error interno del servidor" });
+    res.status(500).json({ error: "Error interno" });
   }
 };
 
@@ -284,3 +293,87 @@ exports.restoreDatabase = async (req, res) => {
     res.status(500).json({ error: "Error interno" });
   }
 };
+
+exports.listBackups = async (req, res) => {
+  try {
+    const backupsDir = path.join(process.cwd(), "backups");
+    if (!fs.existsSync(backupsDir)) {
+      return res.json([]);
+    }
+
+    const files = fs.readdirSync(backupsDir);
+    const backups = files
+      .filter(file => file.endsWith(".dump") || file.endsWith(".sql"))
+      .map(file => {
+        const stats = fs.statSync(path.join(backupsDir, file));
+        return {
+          name: file,
+          size: stats.size,
+          createdAt: stats.birthtime
+        };
+      })
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    res.json(backups);
+  } catch (error) {
+    console.error("Error al listar backups:", error);
+    res.status(500).json({ error: "Error al listar backups" });
+  }
+};
+
+exports.downloadBackup = async (req, res) => {
+  try {
+    const { fileName } = req.params;
+    const filePath = path.join(process.cwd(), "backups", fileName);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Archivo no encontrado" });
+    }
+
+    res.download(filePath);
+  } catch (error) {
+    console.error("Error al descargar backup:", error);
+    res.status(500).json({ error: "Error al descargar backup" });
+  }
+};
+
+exports.restoreFromServer = async (req, res) => {
+  try {
+    const { fileName } = req.body;
+    const filePath = path.join(process.cwd(), "backups", fileName);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "Archivo no encontrado en el servidor" });
+    }
+
+    const dbName = process.env.DB_NAME || "sgm_db";
+    const dbUser = process.env.DB_USER || "postgres";
+    const dbPassword = process.env.DB_PASSWORD || "postgres";
+    const dbHost = process.env.DB_HOST || "localhost";
+    const dbPort = process.env.DB_PORT || 5432;
+    const PG_RESTORE = process.env.PG_RESTORE || "pg_restore";
+
+    const command = `"${PG_RESTORE}" -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists --no-owner --no-privileges --disable-triggers -v "${filePath}"`;
+
+    console.log(`Restaurando desde servidor: ${fileName}...`);
+
+    exec(command, {
+      env: { ...process.env, PGPASSWORD: dbPassword }
+    }, (error, stdout, stderr) => {
+      if (error) {
+        console.error("Error en restore:", error.message);
+        return res.status(500).json({
+          error: "Error al restaurar",
+          details: error.message,
+        });
+      }
+
+      console.log("Restore desde servidor completado");
+      res.json({ message: "Restauración exitosa desde el servidor" });
+    });
+
+  } catch (error) {
+    console.error("Error en restoreFromServer:", error);
+    res.status(500).json({ error: "Error interno" });
+  }
+};

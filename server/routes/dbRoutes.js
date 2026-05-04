@@ -8,6 +8,9 @@ const os = require("os");
 const upload = multer({ dest: os.tmpdir() });
 
 router.get("/backup", dbController.backupDatabase);
+router.get("/backups", dbController.listBackups);
+router.get("/download/:fileName", dbController.downloadBackup);
 router.post("/restore", upload.single("backup"), dbController.restoreDatabase);
+router.post("/restore-server", dbController.restoreFromServer);
 
 module.exports = router;
