@@ -75,7 +75,7 @@ const Sales = () => {
   const paymentMethodRef = useRef('Efectivo');
   const amountPaidRef = useRef('0');
   const [searchMode, setSearchMode] = useState(() => {
-    return localStorage.getItem('search_mode') || 'server';
+    return localStorage.getItem('search_mode') || 'local';
   });
   const location = useLocation();
   const navigate = useNavigate();
@@ -737,15 +737,23 @@ const Sales = () => {
             });
             results = response.data;
           } else {
-            // Búsqueda local (actual)
-            results = await db.products
-              .filter(p => {
-                const productName = (p.name || '').toLowerCase();
-                const productSku = (p.sku || '').toLowerCase();
-                return productName.includes(lowerTerm) || productSku.includes(lowerTerm);
-              })
-              .limit(100)
-              .toArray();
+            // Búsqueda local OPTIMIZADA
+            // 1. Intentar SKU exacto primero (usando índice de Dexie - instantáneo)
+            const exactSku = await db.products.where('sku').equalsIgnoreCase(lowerTerm).first();
+            
+            if (exactSku) {
+              results = [exactSku];
+            } else {
+              // 2. Búsqueda por nombre o SKU parcial si no hay SKU exacto
+              results = await db.products
+                .filter(p => {
+                  const productName = (p.name || '').toLowerCase();
+                  const productSku = (p.sku || '').toLowerCase();
+                  return productName.includes(lowerTerm) || productSku.includes(lowerTerm);
+                })
+                .limit(50)
+                .toArray();
+            }
 
             // Ordenar resultados locales
             results = results.sort((a, b) => {
