@@ -56,7 +56,8 @@ const CashRegister = () => {
       fetchCurrentRegister();
     } catch (error) {
       console.error('Error opening register:', error);
-      toast.error(error.response?.data?.message || 'Error al abrir caja');
+      const details = error.response?.data?.details || '';
+      toast.error(`Error al abrir caja: ${details || error.response?.data?.message || 'Error en el servidor'}`);
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,8 @@ const CashRegister = () => {
       setCurrentRegister(null);
     } catch (error) {
       console.error('Error closing register:', error);
-      toast.error(error.response?.data?.message || 'Error al cerrar caja');
+      const details = error.response?.data?.details || '';
+      toast.error(`Error al cerrar caja: ${details || error.response?.data?.message || 'Error en el servidor'}`, { duration: 6000 });
     } finally {
       setLoading(false);
     }
@@ -131,7 +133,8 @@ const CashRegister = () => {
       fetchCurrentRegister();
     } catch (error) {
       console.error('Error adding movement:', error);
-      toast.error('Error al registrar movimiento');
+      const details = error.response?.data?.details || '';
+      toast.error(`Error al registrar movimiento: ${details || 'Error en el servidor'}`);
     } finally {
       setLoading(false);
     }

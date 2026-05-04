@@ -175,8 +175,11 @@ exports.closeCashRegister = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Error en closeCashRegister:", error);
-    res.status(500).json({ message: "Error al cerrar caja" });
+    console.error("Error crítico en closeCashRegister:", error);
+    res.status(500).json({ 
+      message: "Error al cerrar caja", 
+      details: error.message 
+    });
   }
 };
 

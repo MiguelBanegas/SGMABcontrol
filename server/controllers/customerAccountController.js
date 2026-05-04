@@ -319,7 +319,10 @@ exports.recordPayment = async (req, res) => {
       if (linkedPaymentsSum >= originalDebt) {
         await trx("sales")
           .where({ id: saleId })
-          .update({ settled_at: trx.fn.now() });
+          .update({ 
+            status: "completado",
+            settled_at: trx.fn.now() 
+          });
       } else {
         const currentTotal = items.reduce(
           (acc, item) =>
@@ -331,7 +334,10 @@ exports.recordPayment = async (req, res) => {
         if (revaluedPending <= 0.01) {
           await trx("sales")
             .where({ id: saleId })
-            .update({ settled_at: trx.fn.now() });
+            .update({ 
+              status: "completado",
+              settled_at: trx.fn.now() 
+            });
         }
       }
     };
