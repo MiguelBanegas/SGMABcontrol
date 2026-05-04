@@ -8,6 +8,7 @@ import ProductEvolutionHistory from './ProductEvolutionHistory';
 import { useAuth } from '../context/AuthContext';
 import socket from '../socket';
 import { getImageUrl } from '../utils/imageUtils';
+import { toast } from 'react-hot-toast';
 
 const Stock = () => {
   const [products, setProducts] = useState([]);
@@ -162,17 +163,25 @@ const Stock = () => {
         handleEditProduct(searchResults[selectedIndex]);
       }
     } else if (e.key === 'Enter' && searchTerm.length > 0) {
-      // Búsqueda exacta por SKU para escáner
-      try {
-        const token = localStorage.getItem('token');
-        const response = await axios.get(`/api/products/sku/${searchTerm}`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (response.data) {
-          handleEditProduct(response.data);
+      // Búsqueda exacta por SKU para escáner - Primero intentamos localmente
+      const localProduct = products.find(p => p.sku === searchTerm);
+      if (localProduct) {
+        handleEditProduct(localProduct);
+      } else {
+        // Si no está local, intentamos en el servidor (por si hubo cambios recientes)
+        try {
+          const token = localStorage.getItem('token');
+          const response = await axios.get(`/api/products/sku/${searchTerm}`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (response.data) {
+            handleEditProduct(response.data);
+          } else {
+            toast.error(`Producto con SKU "${searchTerm}" no encontrado`);
+          }
+        } catch (error) {
+          toast.error('Error al buscar el producto');
         }
-      } catch (error) {
-        console.log('Producto no encontrado');
       }
     }
   };
@@ -180,16 +189,25 @@ const Stock = () => {
   const handleCameraScan = async (decodedText) => {
     setShowScanner(false);
     setSearchTerm(decodedText);
-    try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`/api/products/sku/${decodedText}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (response.data) {
-        handleEditProduct(response.data);
+    
+    // Primero intentamos búsqueda local
+    const localProduct = products.find(p => p.sku === decodedText);
+    if (localProduct) {
+      handleEditProduct(localProduct);
+    } else {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.get(`/api/products/sku/${decodedText}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (response.data) {
+          handleEditProduct(response.data);
+        } else {
+          toast.error(`Producto con SKU "${decodedText}" no encontrado`);
+        }
+      } catch (error) {
+        toast.error('Error al buscar el producto');
       }
-    } catch (error) {
-      console.log('Producto no encontrado');
     }
   };
 

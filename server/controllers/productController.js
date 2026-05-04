@@ -20,8 +20,9 @@ exports.getProductBySku = async (req, res) => {
     const product = await db("products")
       .where({ sku, active: true, business_id: req.user.business_id })
       .first();
-    if (!product)
-      return res.status(404).json({ message: "Producto no encontrado" });
+    if (!product) {
+      return res.json(null);
+    }
     res.json(product);
   } catch (error) {
     console.error("Error en getProductBySku:", error);
