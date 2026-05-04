@@ -102,7 +102,8 @@ const Settings = () => {
       setTimeout(() => window.location.reload(), 3000);
     } catch (error) {
       console.error('Error al restaurar desde servidor:', error);
-      toast.error('Error al restaurar desde el servidor');
+      const details = error.response?.data?.details || '';
+      toast.error(`Error al restaurar: ${details || 'Error en el servidor'}`, { duration: 6000 });
     } finally {
       setRestoring(false);
     }
@@ -143,7 +144,8 @@ const Settings = () => {
       document.getElementById('restore-file-input').value = '';
     } catch (error) {
       console.error('Error al restaurar:', error);
-      toast.error('Error al restaurar la base de datos. Verifique el archivo.');
+      const details = error.response?.data?.details || '';
+      toast.error(`Error al restaurar: ${details || 'Verifique el archivo.'}`, { duration: 6000 });
     } finally {
       setRestoring(false);
     }

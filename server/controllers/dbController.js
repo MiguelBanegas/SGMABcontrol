@@ -340,9 +340,14 @@ exports.downloadBackup = async (req, res) => {
 exports.restoreFromServer = async (req, res) => {
   try {
     const { fileName } = req.body;
-    const filePath = path.join(process.cwd(), "backups", fileName);
+    // Usamos path.resolve para asegurar ruta absoluta basada en el directorio de trabajo actual
+    const backupsDir = path.resolve(process.cwd(), "backups");
+    const filePath = path.join(backupsDir, fileName);
+
+    console.log(`Intentando restaurar desde: ${filePath}`);
 
     if (!fs.existsSync(filePath)) {
+      console.error(`Archivo no encontrado: ${filePath}`);
       return res.status(404).json({ error: "Archivo no encontrado en el servidor" });
     }
 
@@ -353,27 +358,33 @@ exports.restoreFromServer = async (req, res) => {
     const dbPort = process.env.DB_PORT || 5432;
     const PG_RESTORE = process.env.PG_RESTORE || "pg_restore";
 
-    const command = `"${PG_RESTORE}" -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists --no-owner --no-privileges --disable-triggers -v "${filePath}"`;
+    // En Linux es mejor no usar comillas en el binario si no tiene espacios
+    const cmdBinary = PG_RESTORE.includes(" ") ? `"${PG_RESTORE}"` : PG_RESTORE;
+    const command = `${cmdBinary} -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --clean --if-exists --no-owner --no-privileges --disable-triggers -v "${filePath}"`;
 
-    console.log(`Restaurando desde servidor: ${fileName}...`);
+    console.log(`Ejecutando comando de restauración: ${command.replace(dbPassword, '****')}`);
 
     exec(command, {
       env: { ...process.env, PGPASSWORD: dbPassword }
     }, (error, stdout, stderr) => {
       if (error) {
-        console.error("Error en restore:", error.message);
+        console.error("Error de ejecución pg_restore:", error.message);
+        console.error("Salida de error (stderr):", stderr);
         return res.status(500).json({
-          error: "Error al restaurar",
-          details: error.message,
+          error: "Error al restaurar base de datos",
+          details: stderr || error.message,
         });
       }
 
-      console.log("Restore desde servidor completado");
+      console.log("Restauración desde servidor completada exitosamente");
       res.json({ message: "Restauración exitosa desde el servidor" });
     });
 
   } catch (error) {
-    console.error("Error en restoreFromServer:", error);
-    res.status(500).json({ error: "Error interno" });
+    console.error("Error crítico en restoreFromServer:", error);
+    res.status(500).json({ 
+      error: "Error interno del servidor", 
+      details: error.message 
+    });
   }
 };
