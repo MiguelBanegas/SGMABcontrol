@@ -46,7 +46,7 @@ server/spooler/completed/*.html
 server/spooler/temp/*.html
 
 # Backups and temporary files
-
+server/backups/
 temp_sqlite/
 temp_backup_extract/
 server/product_record.json
