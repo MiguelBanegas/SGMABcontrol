@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { getApiUrl } from "../utils/config";
 import "./MigrationPanel.css";
 
 const MigrationPanel = () => {
@@ -18,7 +19,7 @@ const MigrationPanel = () => {
       setLoading(true);
       const token = localStorage.getItem("token");
       const response = await axios.get(
-        `${import.meta.env.VITE_API_URL || window.location.origin}/api/migration/migration-status`,
+        `${getApiUrl()}/api/migration/migration-status`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -48,7 +49,7 @@ const MigrationPanel = () => {
 
       const token = localStorage.getItem("token");
       const response = await axios.post(
-        `${import.meta.env.VITE_API_URL || window.location.origin}/api/migration/run-migration`,
+        `${getApiUrl()}/api/migration/run-migration`,
         {},
         {
           headers: { Authorization: `Bearer ${token}` },
