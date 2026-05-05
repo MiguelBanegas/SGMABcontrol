@@ -10,6 +10,8 @@ echo "📥 Tirando cambios desde el repositorio (master)..."
 # Guardamos cambios locales (como permisos o ediciones accidentales) para evitar conflictos
 git stash
 git pull origin master
+# Autocuración: Asegurar que el script mantenga permisos de ejecución para la próxima vez
+chmod +x deploy.sh
 echo "📝 Último commit aplicado:"
 git log -1 --pretty=format:"%C(yellow)%h%C(reset) %s %C(blue)(%an, %ar)%C(reset)"
 echo ""
