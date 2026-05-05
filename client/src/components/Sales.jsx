@@ -1082,6 +1082,18 @@ const Sales = () => {
 
     if (currentCart.length === 0) return;
 
+    // Validación de envases vs Consumidor Final para asegurar trazabilidad
+    const hasContainers = currentCart.some(item => item.is_container);
+    if (hasContainers) {
+      if (!currentCustomer || 
+          currentCustomer.name.toLowerCase().includes('cons. final') || 
+          currentCustomer.name.toLowerCase().includes('consumidor final')) {
+        toast.error('Para ventas con envases, debe seleccionar un cliente real (no Consumidor Final)');
+        customerInputRef.current?.focus();
+        return;
+      }
+    }
+
     // Para Cuenta Corriente, no se requiere monto de pago
     if (currentPaymentMethod === 'Cta Cte') {
       if (!currentCustomer) {

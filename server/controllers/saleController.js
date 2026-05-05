@@ -43,7 +43,7 @@ exports.createSale = async (req, res) => {
     });
   }
 
-  // Validación: Si hay envases, debe haber cliente para trazabilidad
+  // Validación: Si hay envases, debe haber cliente REAL para trazabilidad
   try {
     const productIds = items.map((i) => i.product_id);
     const containers = await db("products")
@@ -51,10 +51,25 @@ exports.createSale = async (req, res) => {
       .andWhere("is_container", true)
       .andWhere("business_id", req.user.business_id);
 
-    if (containers.length > 0 && !customer_id) {
-      return res.status(400).json({
-        message: "Para ventas con envases, debe seleccionar un cliente",
-      });
+    if (containers.length > 0) {
+      if (!customer_id) {
+        return res.status(400).json({
+          message: "Para ventas con envases, debe seleccionar un cliente",
+        });
+      }
+
+      // Verificar si es Consumidor Final
+      const customer = await db("customers")
+        .where({ id: customer_id, business_id: req.user.business_id })
+        .first();
+      
+      if (!customer || 
+          customer.name.toLowerCase().includes("cons. final") || 
+          customer.name.toLowerCase().includes("consumidor final")) {
+        return res.status(400).json({
+          message: "No se pueden prestar envases a un Consumidor Final. Por favor seleccione un cliente real.",
+        });
+      }
     }
   } catch (error) {
     console.error("Error validando envases:", error);
