@@ -7,6 +7,8 @@ echo "🚀 Iniciando despliegue de SGMABcontrol..."
 
 # 1. Obtener los últimos cambios de GitHub
 echo "📥 Tirando cambios desde el repositorio (master)..."
+# Guardamos cambios locales (como permisos o ediciones accidentales) para evitar conflictos
+git stash
 git pull origin master
 echo "📝 Último commit aplicado:"
 git log -1 --pretty=format:"%C(yellow)%h%C(reset) %s %C(blue)(%an, %ar)%C(reset)"
