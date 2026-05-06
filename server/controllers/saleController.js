@@ -1,4 +1,6 @@
 const db = require("../db");
+const { v4: uuidv4 } = require("uuid");
+
 
 exports.createSale = async (req, res) => {
   const {
@@ -10,6 +12,7 @@ exports.createSale = async (req, res) => {
     amount_paid,
     change_given,
     debt_amount,
+    payments,
   } = req.body;
   const user_id = req.user.id;
 
@@ -195,6 +198,10 @@ exports.createSale = async (req, res) => {
       cash_register_id = openRegister.id;
     }
 
+    const effectivePaymentMethod = payments && payments.length > 1 
+      ? "Múltiple" 
+      : (payment_method || "Efectivo");
+
     await trx("sales").insert({
       id,
       user_id,
@@ -203,7 +210,7 @@ exports.createSale = async (req, res) => {
       subtotal,
       cash_discount: cashDiscount,
       total,
-      payment_method: payment_method || "Efectivo",
+      payment_method: effectivePaymentMethod,
       amount_paid: amount_paid || null,
       change_given: change_given || null,
       debt_amount: null, // Initial debt is null, will be updated
@@ -213,6 +220,29 @@ exports.createSale = async (req, res) => {
       cash_register_id: cash_register_id, // Asociar con caja abierta
       created_at: created_at || trx.fn.now(),
     });
+
+    // Guardar desglose de pagos
+    if (payments && Array.isArray(payments) && payments.length > 0) {
+      const paymentRecords = payments.map((p) => ({
+        id: uuidv4(),
+        sale_id: id,
+        payment_method: p.method,
+        amount: parseFloat(p.amount),
+        business_id: req.user.business_id,
+        created_at: created_at || trx.fn.now(),
+      }));
+      await trx("sale_payments").insert(paymentRecords);
+    } else {
+      // Compatibilidad: crear un único registro de pago
+      await trx("sale_payments").insert({
+        id: uuidv4(),
+        sale_id: id,
+        payment_method: payment_method || "Efectivo",
+        amount: payment_method === "Cta Cte" ? 0 : total,
+        business_id: req.user.business_id,
+        created_at: created_at || trx.fn.now(),
+      });
+    }
 
     // Guardar items
     await trx("sale_items").insert(saleItems);
@@ -226,12 +256,19 @@ exports.createSale = async (req, res) => {
 
       if (customer && !customer.name.toLowerCase().includes("cons. final")) {
         // Calcular cuánto pagó realmente (descontando el vuelto)
-        // SI ES CUENTA CORRIENTE PURA, ignoramos pagos parciales enviados para evitar errores de efectivo
-        const netPaid =
-          payment_method === "Cta Cte"
-            ? 0
-            : parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
-        const remainingDebt = total - netPaid; // Deuda después del pago en efectivo
+        let netPaid = 0;
+        if (payments && Array.isArray(payments) && payments.length > 0) {
+          // El pago neto es todo lo que NO es Cta Cte
+          netPaid = payments
+            .filter((p) => p.method !== "Cta Cte")
+            .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+        } else {
+          netPaid =
+            payment_method === "Cta Cte"
+              ? 0
+              : parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+        }
+        const remainingDebt = total - netPaid; // Deuda después del pago en efectivo/electrónico
 
         // Obtener el balance ANTES de esta venta para la condición
         const lastTxBeforeCondition = await trx("customer_account_transactions")

@@ -53,11 +53,14 @@ exports.closeCashRegister = async (req, res) => {
     }
 
     // Calcular ventas por método de pago
-    const salesByMethod = await db("sales")
-      .where({ cash_register_id: id })
-      .select("payment_method")
-      .select(db.raw("SUM(total - COALESCE(debt_amount, 0)) as total"))
-      .groupBy("payment_method");
+    // Calcular ventas por método de pago usando el desglose de sale_payments
+    const salesByMethod = await db("sale_payments")
+      .join("sales", "sale_payments.sale_id", "sales.id")
+      .where({ "sales.cash_register_id": id })
+      .whereNot("sale_payments.payment_method", "Cta Cte")
+      .select("sale_payments.payment_method")
+      .sum("sale_payments.amount as total")
+      .groupBy("sale_payments.payment_method");
 
     const totals = {
       cash: 0,
@@ -199,11 +202,14 @@ exports.getCurrentCashRegister = async (req, res) => {
     }
 
     // Calcular ventas por método de pago
-    const salesByMethod = await db("sales")
-      .where({ cash_register_id: cashRegister.id })
-      .select("payment_method")
-      .select(db.raw("SUM(total - COALESCE(debt_amount, 0)) as total"))
-      .groupBy("payment_method");
+    // Calcular ventas por método de pago usando el desglose de sale_payments
+    const salesByMethod = await db("sale_payments")
+      .join("sales", "sale_payments.sale_id", "sales.id")
+      .where({ "sales.cash_register_id": cashRegister.id })
+      .whereNot("sale_payments.payment_method", "Cta Cte")
+      .select("sale_payments.payment_method")
+      .sum("sale_payments.amount as total")
+      .groupBy("sale_payments.payment_method");
 
     const totals = {
       cash: 0,
