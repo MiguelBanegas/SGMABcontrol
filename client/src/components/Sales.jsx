@@ -58,10 +58,19 @@ const Sales = () => {
     return localStorage.getItem('print_method') || 'server';
   });
   const [amountPaid, setAmountPaid] = useState('0');
+  const [paymentSplits, setPaymentSplits] = useState([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showPaymentWizard, setShowPaymentWizard] = useState(false);
+  const [wizardAmount, setWizardAmount] = useState('');
+  const [wizardStep, setWizardStep] = useState('amount'); // 'amount', 'method'
+  const wizardInputRef = useRef(null);
   const [customerBalance, setCustomerBalance] = useState(null);
   const [selectedCustomerContainers, setSelectedCustomerContainers] = useState([]);
   const [showAccountModal, setShowAccountModal] = useState(false);
+  const [wizardCustomerSearch, setWizardCustomerSearch] = useState('');
+  const [wizardCustomerResults, setWizardCustomerResults] = useState([]);
+  const [wizardCustomerSelectedIndex, setWizardCustomerSelectedIndex] = useState(-1);
+  const wizardCustomerInputRef = useRef(null);
   const [autoWhatsApp, setAutoWhatsApp] = useState(() => {
     const saved = localStorage.getItem('auto_whatsapp');
     return saved === null ? false : saved === 'true';
@@ -82,6 +91,13 @@ const Sales = () => {
   const [editingSaleId, setEditingSaleId] = useState(null);
   const [lastCompletedSale, setLastCompletedSale] = useState(null);
   const ticketRef = useRef(null);
+  const paymentSplitsRef = useRef([]);
+  const cashDiscountPercentRef = useRef(0);
+  const showPaymentWizardRef = useRef(false);
+  const wizardStepRef = useRef('amount');
+  const wizardAmountRef = useRef('');
+  const wizardCustomerResultsRef = useRef([]);
+  const wizardCustomerSelectedIndexRef = useRef(-1);
 
   // Estado para ventas múltiples
   const [salesTabs, setSalesTabs] = useState([{
@@ -89,7 +105,8 @@ const Sales = () => {
     cart: [],
     customer: null,
     paymentMethod: 'Efectivo',
-    amountPaid: '0'
+    amountPaid: '0',
+    paymentSplits: []
   }]);
   const [activeTabId, setActiveTabId] = useState(1);
   const [currentRegister, setCurrentRegister] = useState(null);
@@ -122,6 +139,34 @@ const Sales = () => {
     amountPaidRef.current = amountPaid;
   }, [amountPaid]);
 
+  useEffect(() => {
+    paymentSplitsRef.current = paymentSplits;
+  }, [paymentSplits]);
+
+  useEffect(() => {
+    cashDiscountPercentRef.current = cashDiscountPercent;
+  }, [cashDiscountPercent]);
+
+  useEffect(() => {
+    showPaymentWizardRef.current = showPaymentWizard;
+  }, [showPaymentWizard]);
+
+  useEffect(() => {
+    wizardStepRef.current = wizardStep;
+  }, [wizardStep]);
+
+  useEffect(() => {
+    wizardAmountRef.current = wizardAmount;
+  }, [wizardAmount]);
+  
+  useEffect(() => {
+    wizardCustomerResultsRef.current = wizardCustomerResults;
+  }, [wizardCustomerResults]);
+
+  useEffect(() => {
+    wizardCustomerSelectedIndexRef.current = wizardCustomerSelectedIndex;
+  }, [wizardCustomerSelectedIndex]);
+
   // Sincronizar cart con el tab activo
   useEffect(() => {
     if (activeTab) {
@@ -129,6 +174,7 @@ const Sales = () => {
       setSelectedCustomer(activeTab.customer);
       setPaymentMethod(activeTab.paymentMethod || 'Efectivo');
       setAmountPaid(activeTab.amountPaid || '0');
+      setPaymentSplits(activeTab.paymentSplits || []);
     }
   }, [activeTabId]);
 
@@ -136,10 +182,10 @@ const Sales = () => {
   useEffect(() => {
     setSalesTabs(tabs => tabs.map(tab => 
       tab.id === activeTabId 
-        ? { ...tab, cart, customer: selectedCustomer, paymentMethod, amountPaid }
+        ? { ...tab, cart, customer: selectedCustomer, paymentMethod, amountPaid, paymentSplits }
         : tab
     ));
-  }, [cart, selectedCustomer, paymentMethod, amountPaid, activeTabId]);
+  }, [cart, selectedCustomer, paymentMethod, amountPaid, paymentSplits, activeTabId]);
 
   // Cargar venta para editar si viene en el state
   useEffect(() => {
@@ -435,8 +481,27 @@ const Sales = () => {
           <span style="font-size: 10px; font-weight: 700; uppercase">Bultos: ${saleData.items.reduce((sum, item) => sum + (item.sell_by_weight ? 1 : parseFloat(item.quantity)), 0)}</span>
         </div>
 
-        <div class="right" style="font-size: 10px; margin-top: 10px;">
-          <i>Medio de Pago: <b>${saleData.payment_method || 'Efectivo'}</b></i>
+        <div style="margin-top: 12px; font-size: 10px;">
+          <div style="border-bottom: 0.5px solid #eee; margin-bottom: 5px; font-weight: bold; text-transform: uppercase;">Desglose de Pago</div>
+          ${saleData.payments && saleData.payments.length > 0 ? 
+            saleData.payments.map(p => `
+              <div class="summary-item">
+                <span>${p.method}:</span>
+                <b>$${Number(p.amount).toFixed(2)}</b>
+              </div>
+            `).join('') : `
+              <div class="summary-item">
+                <span>${saleData.payment_method || 'Efectivo'}:</span>
+                <b>$${Number(saleData.total).toFixed(2)}</b>
+              </div>
+            `
+          }
+          ${saleData.debt_amount > 0 ? `
+            <div class="summary-item" style="color: #d00; border-top: 0.5px dashed #d00; padding-top: 2px; margin-top: 4px;">
+              <span>SALDO DEUDA:</span>
+              <b>$${Number(saleData.debt_amount).toFixed(2)}</b>
+            </div>
+          ` : ''}
         </div>
         
         <div class="center" style="margin-top: 25px;">
@@ -540,6 +605,68 @@ const Sales = () => {
     });
 
     const handleGlobalKeyDown = (e) => {
+      // Si el wizard está abierto, prioridad a sus teclas
+      if (showPaymentWizardRef.current) {
+        // Calcular estado actual del pago
+        const currentCart = cartRef.current;
+        const currentSplits = paymentSplitsRef.current;
+        const currentDiscount = cashDiscountPercentRef.current;
+        const currentTotal = calculateTotal(currentCart);
+        const finalTotal = currentTotal - (currentSplits.some(s => s.method === 'Efectivo') ? currentTotal * (currentDiscount / 100) : 0);
+        const totalAssigned = currentSplits.reduce((sum, s) => sum + s.amount, 0);
+        const remaining = finalTotal - totalAssigned;
+
+        if (remaining <= 0.01) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            handleCheckout();
+            setShowPaymentWizard(false);
+            return;
+          }
+        }
+
+        if (wizardStepRef.current === 'method') {
+          if (['1', '2', '3', '4'].includes(e.key)) {
+            e.preventDefault();
+            const methods = { '1': 'Efectivo', '2': 'MP', '3': 'Transferencia', '4': 'Cta Cte' };
+            addWizardPayment(methods[e.key]);
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            setWizardStep('amount');
+            return;
+          }
+        } else if (wizardStepRef.current === 'amount') {
+          // Si el input no tiene foco por alguna razón, forzar Enter
+          if (e.key === 'Enter' && document.activeElement !== wizardInputRef.current) {
+            e.preventDefault();
+            if (parseFloat(wizardAmountRef.current) > 0) {
+              setWizardStep('method');
+            }
+          }
+        } else if (wizardStepRef.current === 'customer') {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            const results = wizardCustomerResultsRef.current;
+            setWizardCustomerSelectedIndex(prev => (prev < results.length - 1 ? prev + 1 : prev));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setWizardCustomerSelectedIndex(prev => (prev > 0 ? prev - 1 : prev));
+          } else if (e.key === 'Enter' && wizardCustomerSelectedIndexRef.current >= 0) {
+            e.preventDefault();
+            const results = wizardCustomerResultsRef.current;
+            const selectedIdx = wizardCustomerSelectedIndexRef.current;
+            selectCustomerFromWizard(results[selectedIdx]);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setWizardStep('method');
+          }
+        }
+        // No bloquear otras teclas (como números en el input)
+        return;
+      }
+
       if (e.key === 'F10') {
         e.preventDefault();
         
@@ -561,32 +688,8 @@ const Sales = () => {
         const paid = parseFloat(currentAmountPaid) || 0;
         const isPaymentSufficient = paid >= currentTotal;
         
-        // Verificar si hay cliente seleccionado (no Cons. Final)
-        const hasValidCustomer = currentCustomer && 
-          !currentCustomer.name.toLowerCase().includes('cons. final') &&
-          !currentCustomer.name.toLowerCase().includes('consumidor final');
-        
-        // Si el pago es suficiente O hay un cliente válido seleccionado, cerrar venta directamente
-        if (isPaymentSufficient || hasValidCustomer) {
-          handleCheckout();
-          return;
-        }
-        
-        // Flujo normal si no se cumplen las condiciones de cierre automático
-        if (isNotCtaCte && !isPaymentFocused && !isCustomerFocused) {
-          // 1er paso: Ir a Monto a Pagar
-          paymentInputRef.current?.focus();
-          paymentInputRef.current?.select();
-        } else if (isNotCtaCte && isPaymentFocused) {
-          // 2do paso: Ir a Buscar Cliente
-          customerInputRef.current?.focus();
-        } else if (!isCustomerFocused) {
-          // Caso base: Si no está en cliente (y tal vez no es efectivo), ir a cliente
-          customerInputRef.current?.focus();
-        } else {
-          // 3er paso: Ejecutar cobro
-          handleCheckout();
-        }
+        // AHORA: Abrir el Wizard siempre para permitir desglosar pagos
+        openWizard();
       }
     };
 
@@ -844,6 +947,100 @@ const Sales = () => {
     setSelectedIndex(-1);
     setIsSearching(false);
     scanInputRef.current?.focus();
+  };
+
+  const openWizard = () => {
+    const currentCart = cartRef.current;
+    if (currentCart.length === 0) return;
+
+    // Reiniciar datos previos para empezar de cero
+    setPaymentSplits([]);
+    setAmountPaid('0');
+
+    // Reiniciar a Consumidor Final por defecto
+    const defaultCustomer = customers.find(c => c.name.toLowerCase().includes('cons. final'));
+    if (defaultCustomer) {
+      selectCustomer(defaultCustomer);
+    }
+    
+    const currentDiscount = cashDiscountPercentRef.current;
+    const currentTotal = calculateTotal(currentCart);
+    
+    // Al empezar de cero, el total es el subtotal de los productos
+    setWizardAmount(currentTotal.toFixed(2));
+    setWizardStep('amount');
+    setShowPaymentWizard(true);
+  };
+
+  const addWizardPayment = (method) => {
+    const amount = parseFloat(wizardAmountRef.current) || 0;
+    const currentCustomer = selectedCustomerRef.current;
+    const currentSplits = paymentSplitsRef.current;
+
+    if (amount <= 0 && method !== 'Cta Cte') {
+      toast.error('Ingrese un monto válido');
+      return;
+    }
+
+    if (method === 'Cta Cte' && (!currentCustomer || currentCustomer?.name?.toLowerCase().includes('cons. final'))) {
+      setWizardStep('customer');
+      setWizardCustomerSearch('');
+      setWizardCustomerResults([]);
+      setWizardCustomerSelectedIndex(-1);
+      setTimeout(() => wizardCustomerInputRef.current?.focus(), 100);
+      return;
+    }
+
+    // Actualizar splits
+    const existing = currentSplits.find(s => s.method === method);
+    let newSplits;
+    if (existing) {
+      newSplits = currentSplits.map(s => s.method === method ? { ...s, amount: s.amount + amount } : s);
+    } else {
+      newSplits = [...currentSplits, { method, amount }];
+    }
+    
+    setPaymentSplits(newSplits);
+    
+    // Calcular nuevo remanente para sugerir en el siguiente paso
+    const currentCart = cartRef.current;
+    const currentDiscount = cashDiscountPercentRef.current;
+    const currentTotal = calculateTotal(currentCart);
+    const finalTotal = currentTotal - (newSplits.some(s => s.method === 'Efectivo') ? currentTotal * (currentDiscount / 100) : 0);
+    const totalAssigned = newSplits.reduce((sum, s) => sum + s.amount, 0);
+    const newRemaining = finalTotal - totalAssigned;
+
+    if (newRemaining > 0.01) {
+      setWizardAmount(newRemaining.toFixed(2));
+    } else {
+      setWizardAmount('');
+    }
+    
+    setWizardStep('amount');
+    
+    // Si ya cubrió el total, el modal mostrará el botón de finalizar gracias a la lógica del render
+  };
+
+  const handleWizardCustomerSearch = async (term) => {
+    setWizardCustomerSearch(term);
+    if (term.length > 2) {
+      const results = await db.customers
+        .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
+        .limit(5)
+        .toArray();
+      setWizardCustomerResults(results);
+      setWizardCustomerSelectedIndex(results.length > 0 ? 0 : -1);
+    } else {
+      setWizardCustomerResults([]);
+      setWizardCustomerSelectedIndex(-1);
+    }
+  };
+
+  const selectCustomerFromWizard = async (customer) => {
+    await selectCustomer(customer);
+    setWizardStep('method');
+    // Proceder con el pago una vez seleccionado el cliente
+    addWizardPayment('Cta Cte');
   };
 
   const handleWeightSubmit = (e) => {
@@ -1111,58 +1308,28 @@ const Sales = () => {
       }
     }
 
-    const finalTotal = calculateTotal(currentCart) - (currentPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0);
-    let paid = 0;
-    let difference = 0;
+    const currentSplits = paymentSplitsRef.current;
+    const currentDiscount = cashDiscountPercentRef.current;
+    
+    const finalTotal = calculateTotal(currentCart) - (currentSplits.some(s => s.method === 'Efectivo') ? calculateTotal(currentCart) * (currentDiscount / 100) : 0);
+    
+    // Calcular total pagado (excluyendo Cta Cte que es deuda)
+    const paid = currentSplits
+      .filter(p => p.method !== 'Cta Cte')
+      .reduce((sum, p) => sum + p.amount, 0);
+      
+    const ctaCteAmount = currentSplits
+      .filter(p => p.method === 'Cta Cte')
+      .reduce((sum, p) => sum + p.amount, 0);
+      
+    const totalAssigned = paid + ctaCteAmount;
+    const difference = totalAssigned - finalTotal;
 
-    // Para métodos que NO son Cta Cte, validar el pago
-    if (currentPaymentMethod !== 'Cta Cte') {
-      // Validación: Si el campo de pago está vacío, hacer foco ahí primero
-      const currentAmountPaid = amountPaidRef.current;
-      if (currentAmountPaid === '' || isNaN(parseFloat(currentAmountPaid))) {
-        paymentInputRef.current?.focus();
-        toast.error('Ingrese un monto válido');
-        return;
-      }
-
-      paid = parseFloat(currentAmountPaid);
-      difference = paid - finalTotal;
-
-      // Si hay deuda (falta dinero), validaciones especiales
-      if (difference < 0) {
-        // No se puede tener deuda sin cliente
-        if (!currentCustomer) {
-          toast.error('Debe seleccionar un cliente para registrar una deuda');
-          customerInputRef.current?.focus();
-          return;
-        }
-        
-        // No se puede tener deuda con "Cons. Final"
-        if (currentCustomer.name.toLowerCase().includes('cons. final') || 
-            currentCustomer.name.toLowerCase().includes('consumidor final')) {
-          toast.error('El pago es insuficiente. Seleccione un cliente para registrar la deuda.');
-          customerInputRef.current?.focus();
-          return;
-        }
-      }
-    } else {
-      // Para Cta Cte, el total va completo a deuda y el pago registrado es 0
-      paid = 0;
-      difference = -finalTotal;
-    }
-
-    // AJUSTE CRÍTICO: Si el pago es $0 y hay un cliente, la venta ES de Cuenta Corriente
-    // independiente de lo que diga el selector, para evitar descuentos por efectivo indebidos
-    let finalPaymentMethod = currentPaymentMethod;
-    if (paid === 0 && currentCustomer && !currentCustomer.name.toLowerCase().includes('cons. final')) {
-      finalPaymentMethod = 'Cta Cte';
-    }
-
-    // Si no hay cliente y no es Cta Cte, avisar una vez si el foco no está en el buscador de clientes
-    if (!currentCustomer && currentPaymentMethod !== 'Cta Cte' && document.activeElement !== customerInputRef.current) {
-      customerInputRef.current?.focus();
-      toast('¿Desea agregar un cliente? Presione F10 de nuevo para vender como Anónimo', { icon: '👤', duration: 4000 });
-      return;
+    // Determinamos el método principal para compatibilidad (el que tenga más monto)
+    let finalPaymentMethod = 'Efectivo';
+    if (paymentSplits.length > 0) {
+      const sortedSplits = [...paymentSplits].sort((a, b) => b.amount - a.amount);
+      finalPaymentMethod = sortedSplits[0].method;
     }
 
     const saleData = {
@@ -1177,14 +1344,18 @@ const Sales = () => {
           discount_amount: parseFloat(calc.savings) / item.quantity // Descuento unitario
         };
       }),
-      total: calculateTotal(currentCart) - (finalPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0),
+      total: finalTotal,
       subtotal: calculateTotal(currentCart),
-      cash_discount: finalPaymentMethod === 'Efectivo' ? calculateTotal(currentCart) * (cashDiscountPercent / 100) : 0,
+      cash_discount: currentSplits.some(s => s.method === 'Efectivo') ? calculateTotal(currentCart) * (currentDiscount / 100) : 0,
       customer_id: currentCustomer?.id || null,
-      payment_method: finalPaymentMethod,
-      amount_paid: finalPaymentMethod === 'Cta Cte' ? 0 : paid,
-      change_given: finalPaymentMethod === 'Cta Cte' ? 0 : (difference >= 0 ? difference : 0),
-      debt_amount: difference < 0 ? Math.abs(difference) : 0,
+      payment_method: finalPaymentMethod, // Método principal para reportes legacy
+      payments: currentSplits.filter(p => p.amount > 0).map(p => ({
+        method: p.method,
+        amount: p.amount
+      })),
+      amount_paid: paid,
+      change_given: difference > 0 ? difference : 0,
+      debt_amount: difference < 0 ? Math.abs(difference) + ctaCteAmount : ctaCteAmount,
       created_at: new Date().toISOString()
     };
 
@@ -1785,285 +1956,111 @@ const Sales = () => {
                   </Badge>
                 )}
               </div>
-            </div>
-            
-            {/* Eliminado el contador de items superior para evitar repetición */}
-            
-            <div className="d-flex justify-content-between mb-2 opacity-75">
-              <span>Total Lista (sin promos):</span>
-              <span>${listTotal.toFixed(2)}</span>
-            </div>
-            
-            {totalSavings > 0 && (
-              <div className="d-flex justify-content-between mb-2 text-danger fw-bold">
-                <span>Ahorro en Promos:</span>
-                <span>-${totalSavings.toFixed(2)}</span>
-              </div>
-            )}
-            
-            <div className="d-flex justify-content-between mb-2 border-top pt-2">
-              <span className="fw-bold">Subtotal:</span>
-              <span className="fw-bold">${total.toFixed(2)}</span>
-            </div>
-            
-            {paymentMethod === 'Efectivo' && cashDiscountPercent > 0 && (
-              <div className="d-flex justify-content-between mb-2 text-success">
-                <span>Desc. Efectivo ({cashDiscountPercent}%):</span>
-                <span>-${(total * (cashDiscountPercent / 100)).toFixed(2)}</span>
-              </div>
-            )}
-            
-            <div className="d-flex justify-content-between align-items-center mb-2">
-              <span className="fw-bold h4 mb-0">TOTAL:</span>
-              <span className="fw-bold display-6 text-info">
-                ${(total - (paymentMethod === 'Efectivo' ? total * (cashDiscountPercent / 100) : 0)).toFixed(2)}
-              </span>
-            </div>
-            
-            {/* Campo de Pago */}
-            <div className="mb-3">
-              <Form.Label className="small opacity-75">¿Con cuánto paga?</Form.Label>
-              <InputGroup>
-                <InputGroup.Text className="bg-dark border-secondary text-white">$</InputGroup.Text>
-                <Form.Control
-                  ref={paymentInputRef}
-                  type="number"
-                  step="0.01"
-                  placeholder="0.00"
-                  className="bg-dark border-secondary text-white"
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  disabled={cart.length === 0}
-                />
-              </InputGroup>
-              {amountPaid && parseFloat(amountPaid) > 0 && (() => {
-                const finalTotal = total - (paymentMethod === 'Efectivo' ? total * (cashDiscountPercent / 100) : 0);
-                const paid = parseFloat(amountPaid);
-                const difference = paid - finalTotal;
-                
-                if (difference >= 0) {
-                  return (
-                    <div className="mt-2 p-3 bg-warning bg-opacity-25 border border-warning border-2 rounded">
-                      <div className="d-flex justify-content-between align-items-center">
-                        <span className="text-warning fw-bold h5 mb-0">💰 Vuelto:</span>
-                        <span className="text-warning fw-bold display-6">${difference.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  );
-                } else {
-                  const absoluteDiff = Math.abs(difference);
-                  const creditAvailable = customerBalance < 0 ? Math.abs(customerBalance) : 0;
-                  const creditApplied = Math.min(absoluteDiff, creditAvailable);
-                  const remainingToPay = absoluteDiff - creditApplied;
-
-                  return (
-                    <div className="mt-2 p-2 bg-danger bg-opacity-25 border border-danger rounded">
-                      <div className="d-flex justify-content-between">
-                        <span className="text-danger fw-bold">Falta:</span>
-                        <span className="text-danger fw-bold">${absoluteDiff.toFixed(2)}</span>
-                      </div>
-                      {creditApplied > 0 && (
-                        <div className="d-flex justify-content-between x-small text-success mt-1">
-                          <span>Usa tu crédito:</span>
-                          <span className="fw-bold">-${creditApplied.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {creditApplied > 0 && remainingToPay > 0 && (
-                        <div className="d-flex justify-content-between x-small text-danger border-top border-danger border-opacity-25 mt-1 pt-1">
-                          <span>Queda a deber:</span>
-                          <span className="fw-bold">${remainingToPay.toFixed(2)}</span>
-                        </div>
-                      )}
-                      {!selectedCustomer && (
-                        <div className="text-warning small mt-1">
-                          ⚠️ Debe seleccionar un cliente para registrar deuda
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-              })()}
-            </div>
-            
-            <div className="text-center bg-primary bg-opacity-10 rounded py-2 border border-primary border-opacity-25 mb-4">
-               <span className="text-primary small fw-bold">CANTIDAD DE PRODUCTOS: </span>
-               <span className="h4 mb-0 text-primary fw-bold">{totalItemsCount}</span>
-            </div>
-
-            {/* Selector de Cliente */}
+            </div>            {/* Totales */}
             <div className="mb-4">
-              <Form.Label 
-                className="small opacity-75" 
-                style={{ cursor: 'pointer' }}
-                onClick={() => customerInputRef.current?.focus()}
-              >
-                Cliente
-              </Form.Label>
-              {selectedCustomer ? (
-                <div className="bg-dark bg-opacity-50 p-2 rounded border border-secondary shadow-sm">
-                  <div className="d-flex align-items-center justify-content-between mb-1">
-                    <div className="d-flex align-items-center">
-                      <User size={18} className="me-2 text-info" />
-                      <span className="fw-bold">{selectedCustomer.name}</span>
-                    </div>
-                    <Button 
-                      variant="link" 
-                      size="sm" 
-                      className="text-danger p-0 text-decoration-none" 
-                      onClick={() => {
-                        setSelectedCustomer(null);
-                        setCustomerBalance(null);
-                        setTimeout(() => customerInputRef.current?.focus(), 0);
-                      }}
-                    >
-                      Cambiar
-                    </Button>
-                  </div>
-                  {customerBalance !== null && (
-                    <div className="d-flex flex-wrap align-items-center gap-2 mt-1">
-                      {customerBalance < 0 ? (
-                        <Badge bg="success" className="d-flex align-items-center py-1 px-2 border border-success border-opacity-50">
-                          <TrendingDown size={12} className="me-1" />
-                          Saldo a favor: ${Math.abs(customerBalance).toFixed(2)}
-                        </Badge>
-                      ) : customerBalance > 0 ? (
-                        <Badge bg="danger" className="d-flex align-items-center py-1 px-2 border border-danger border-opacity-50">
-                          <TrendingUp size={12} className="me-1" />
-                          Deuda previa: ${customerBalance.toFixed(2)}
-                        </Badge>
-                      ) : (
-                        <Badge bg="secondary" className="py-1 px-2 opacity-75">
-                          Sin deudas $
-                        </Badge>
-                      )}
-
-                      {activeTab.hasPendingContainers && (
-                        <Badge bg="warning" text="dark" className="d-flex align-items-center py-1 px-2 border border-warning">
-                          <Package size={12} className="me-1" />
-                          Debe envases
-                        </Badge>
-                      )}
-
-                      <Button 
-                        variant="outline-info" 
-                        size="sm" 
-                        className="py-0 px-2 d-flex align-items-center gap-1 border-0"
-                        onClick={() => setShowAccountModal(true)}
-                        style={{ height: '24px', fontSize: '0.75rem' }}
-                      >
-                        <Search size={12} /> Detalle
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="position-relative">
-                  <InputGroup size="sm">
-                    <InputGroup.Text className="bg-dark border-secondary text-white">
-                      <User size={16} />
-                    </InputGroup.Text>
-                    <Form.Control
-                      ref={customerInputRef}
-                      placeholder="Buscar cliente..."
-                      className="bg-dark border-secondary text-white"
-                      value={customerSearch}
-                      onChange={(e) => handleCustomerSearch(e.target.value)}
-                      onKeyDown={handleCustomerKeyDown}
-                    />
-                    <Button variant="outline-info" onClick={() => setShowCustomerModal(true)}>
-                      <UserPlus size={16} />
-                    </Button>
-                  </InputGroup>
-                  {customerResults.length > 0 && (
-                    <ListGroup className="position-absolute w-100 shadow-lg mt-1 border-secondary" style={{ zIndex: 1050, opacity: 1 }}>
-                      {customerResults.map((c, idx) => (
-                        <ListGroup.Item 
-                          key={c.id} 
-                          action 
-                          size="sm"
-                          className={`text-white border-secondary py-2 ${customerSelectedIndex === idx ? 'bg-primary' : 'bg-dark'}`}
-                          style={{ backgroundColor: customerSelectedIndex === idx ? '#0d6efd' : '#212529' }}
-                          onClick={() => selectCustomer(c)}
-                        >
-                          {c.name}
-                        </ListGroup.Item>
-                      ))}
-                    </ListGroup>
-                  )}
-                  {customerSearch.length > 0 && customerResults.length === 0 && !showCustomerModal && (
-                    <div className="x-small text-muted mt-1 text-center">Sin resultados.</div>
-                  )}
+              <div className="d-flex justify-content-between mb-2 opacity-75 small">
+                <span>Total Lista (sin promos):</span>
+                <span>${listTotal.toFixed(2)}</span>
+              </div>
+              
+              {totalSavings > 0 && (
+                <div className="d-flex justify-content-between mb-2 text-danger fw-bold small">
+                  <span>Ahorro en Promos:</span>
+                  <span>-${totalSavings.toFixed(2)}</span>
                 </div>
               )}
-            </div>
-            
-            {/* Eliminado el segundo TOTAL redundante */}
+              
+              <div className="d-flex justify-content-between mb-2 border-top border-secondary border-opacity-25 pt-2">
+                <span className="fw-bold">Subtotal:</span>
+                <span className="fw-bold">${total.toFixed(2)}</span>
+              </div>
+              
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <span className="fw-bold h4 mb-0">TOTAL:</span>
+                <span className="fw-bold display-6 text-info">
+                  ${total.toFixed(2)}
+                </span>
+              </div>
 
+              <div className="text-center bg-primary bg-opacity-10 rounded py-2 border border-primary border-opacity-25">
+                 <span className="text-primary small fw-bold">CANTIDAD DE PRODUCTOS: </span>
+                 <span className="h4 mb-0 text-primary fw-bold">{totalItemsCount}</span>
+              </div>
+            </div>
+
+            {/* Resumen Venta Anterior */}
+            {lastCompletedSale && (
+              <div className="mb-4 bg-secondary bg-opacity-10 p-3 rounded border border-secondary border-opacity-25 shadow-sm">
+                <h6 className="small text-muted uppercase mb-2 border-bottom border-secondary border-opacity-25 pb-1 font-monospace" style={{ letterSpacing: '1px' }}>
+                  Última Venta
+                </h6>
+                <div className="d-flex justify-content-between mb-1">
+                  <span className="small text-muted text-uppercase">Cliente:</span>
+                  <span className="small fw-bold">{lastCompletedSale.customer_name || 'Cons. Final'}</span>
+                </div>
+                <div className="d-flex justify-content-between mb-1">
+                  <span className="small text-muted text-uppercase">Monto:</span>
+                  <span className="small fw-bold text-info">${lastCompletedSale.total.toFixed(2)}</span>
+                </div>
+                {lastCompletedSale.amount_paid > lastCompletedSale.total && (
+                  <div className="d-flex justify-content-between">
+                    <span className="small text-muted text-uppercase">Vuelto:</span>
+                    <span className="small fw-bold text-warning">${(lastCompletedSale.amount_paid - lastCompletedSale.total).toFixed(2)}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Configuraciones de Ticket */}
             <div className="mb-4">
-              <Form.Label className="small opacity-75">Forma de Pago</Form.Label>
-              <Form.Select 
-                className="bg-dark border-secondary text-white border-2"
-                value={paymentMethod}
-                onChange={(e) => {
-                  const newMethod = e.target.value;
-                  if (newMethod === 'Cta Cte' && selectedCustomer?.name?.toLowerCase().includes('cons. final')) {
-                    toast.error('No se permite Cuenta Corriente para Consumidor Final');
-                    return;
-                  }
-                  setPaymentMethod(newMethod);
-                }}
-              >
-                <option value="Efectivo">💵 Efectivo</option>
-                <option value="MP">📱 Mercado Pago</option>
-                <option value="Cta Cte">💳 Cta. Cte.</option>
-              </Form.Select>
-            </div>
-            
-            <div className="mb-2 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
-               <div className="d-flex align-items-center gap-2">
-                 <Share2 size={18} className={autoWhatsApp ? "text-success" : "text-muted"} />
-                 <span className="small">WhatsApp auto.</span>
-               </div>
-               <Form.Check 
-                 type="switch"
-                 id="auto-whatsapp-switch"
-                 checked={autoWhatsApp}
-                 onChange={(e) => {
-                   setAutoWhatsApp(e.target.checked);
-                   localStorage.setItem('auto_whatsapp', e.target.checked);
-                 }}
-               />
-            </div>
+              <div className="mb-2 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
+                 <div className="d-flex align-items-center gap-2">
+                   <Share2 size={18} className={autoWhatsApp ? "text-success" : "text-muted"} />
+                   <span className="small">WhatsApp auto.</span>
+                 </div>
+                 <Form.Check 
+                   type="switch"
+                   id="auto-whatsapp-switch"
+                   checked={autoWhatsApp}
+                   onChange={(e) => {
+                     setAutoWhatsApp(e.target.checked);
+                     localStorage.setItem('auto_whatsapp', e.target.checked);
+                   }}
+                 />
+              </div>
 
-            <div className="mb-4 d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
-               <div className="d-flex align-items-center gap-2">
-                 <Printer size={18} className={autoPrint ? "text-success" : "text-muted"} />
-                 <span className="small">Imprimir ticket auto.</span>
-               </div>
-               <Form.Check 
-                 type="switch"
-                 id="auto-print-switch"
-                 checked={autoPrint}
-                 onChange={(e) => {
-                   setAutoPrint(e.target.checked);
-                   localStorage.setItem('auto_print', e.target.checked);
-                 }}
-               />
+              <div className="d-flex align-items-center justify-content-between p-2 rounded bg-dark bg-opacity-25 border border-secondary border-opacity-25">
+                 <div className="d-flex align-items-center gap-2">
+                   <Printer size={18} className={autoPrint ? "text-success" : "text-muted"} />
+                   <span className="small">Imprimir ticket auto.</span>
+                 </div>
+                 <Form.Check 
+                   type="switch"
+                   id="auto-print-switch"
+                   checked={autoPrint}
+                   onChange={(e) => {
+                     setAutoPrint(e.target.checked);
+                     localStorage.setItem('auto_print', e.target.checked);
+                   }}
+                 />
+              </div>
             </div>
 
             <Button 
               variant={editingSaleId ? "warning" : "primary"} 
               size="lg" 
-              className="w-100 py-3 fw-bold shadow"
+              className="w-100 py-3 fw-bold shadow-lg text-uppercase"
+              style={{ letterSpacing: '1px' }}
               disabled={cart.length === 0 || (!currentRegister && !checkingRegister)}
-              onClick={handleCheckout}
+              onClick={() => openWizard()}
             >
+              <ShoppingCart size={20} className="me-2" />
               {editingSaleId ? 'GUARDAR CAMBIOS' : 'FINALIZAR VENTA (F10)'}
             </Button>
 
             <Button 
               variant="outline-warning" 
-              className="w-100 mt-3 d-flex align-items-center justify-content-center gap-2"
+              className="w-100 mt-3 d-flex align-items-center justify-content-center gap-2 border-opacity-50"
               onClick={() => setShowNoteModal(true)}
             >
               <MessageSquare size={18} /> Dejar Nota / Aviso
@@ -2314,6 +2311,202 @@ const Sales = () => {
           </Button>
         </Modal.Footer>
       </Modal>
+
+      {/* --- WIZARD DE PAGO INTELIGENTE --- */}
+      {(() => {
+        const finalTotal = total - (paymentSplits.some(s => s.method === 'Efectivo') ? total * (cashDiscountPercent / 100) : 0);
+        const totalAssigned = paymentSplits.reduce((sum, s) => sum + s.amount, 0);
+        const remaining = finalTotal - totalAssigned;
+
+        const handleWizardKeyDown = (e) => {
+          if (wizardStep === 'amount') {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              if (parseFloat(wizardAmount) > 0) {
+                setWizardStep('method');
+              } else if (Math.abs(remaining) < 0.01) {
+                handleCheckout();
+                setShowPaymentWizard(false);
+              }
+            }
+          } else if (wizardStep === 'method') {
+            if (['1', '2', '3', '4'].includes(e.key)) {
+              e.preventDefault();
+              const methods = { '1': 'Efectivo', '2': 'MP', '3': 'Transferencia', '4': 'Cta Cte' };
+              addWizardPayment(methods[e.key]);
+            } else if (e.key === 'Escape') {
+              setWizardStep('amount');
+            }
+          }
+        };
+
+        return (
+          <Modal 
+            show={showPaymentWizard} 
+            onHide={() => {
+              setShowPaymentWizard(false);
+              setPaymentSplits([]);
+              setWizardStep('amount');
+              setWizardAmount('');
+              // Resetear a Consumidor Final al cancelar
+              const defaultCustomer = customers.find(c => c.name.toLowerCase().includes('cons. final'));
+              if (defaultCustomer) selectCustomer(defaultCustomer);
+            }} 
+            centered 
+            size="md" 
+            onEntered={() => wizardInputRef.current?.focus()}
+            contentClassName="bg-dark text-white border-secondary shadow-lg"
+          >
+            <Modal.Header closeButton className="border-secondary">
+              <Modal.Title className="d-flex align-items-center gap-2">
+                <Badge bg="primary">F10</Badge> Asistente de Pago
+              </Modal.Title>
+            </Modal.Header>
+            <Modal.Body className="p-4" onKeyDown={handleWizardKeyDown}>
+              <div className="text-center mb-4">
+                <h6 className="text-muted uppercase small mb-1">Total a Cobrar</h6>
+                <h1 className="display-4 fw-bold text-primary">${finalTotal.toFixed(2)}</h1>
+                {selectedCustomer && (
+                  <div className="mt-2">
+                    <Badge bg={customerBalance > 0 ? "danger" : customerBalance < 0 ? "success" : "secondary"} className="p-2 px-3 rounded-pill shadow-sm">
+                      {customerBalance > 0 ? (
+                        <span className="d-flex align-items-center"><TrendingUp size={14} className="me-1"/> Deuda {selectedCustomer.name}: ${customerBalance.toFixed(2)}</span>
+                      ) : customerBalance < 0 ? (
+                        <span className="d-flex align-items-center"><TrendingDown size={14} className="me-1"/> Favor {selectedCustomer.name}: ${Math.abs(customerBalance).toFixed(2)}</span>
+                      ) : (
+                        <span>Cliente: {selectedCustomer.name} (Sin deuda)</span>
+                      )}
+                    </Badge>
+                  </div>
+                )}
+              </div>
+
+              {paymentSplits.length > 0 && (
+                 <div className="mb-4 bg-black bg-opacity-25 p-3 rounded border border-secondary border-opacity-25">
+                   {paymentSplits.map((s, idx) => (
+                     <div key={idx} className="d-flex justify-content-between align-items-center mb-1">
+                       <div className="d-flex align-items-center gap-2">
+                         <Button variant="link" size="sm" className="text-danger p-0" onClick={() => setPaymentSplits(paymentSplits.filter((_, i) => i !== idx))}>
+                           <Trash2 size={14} />
+                         </Button>
+                         <span>{s.method}</span>
+                       </div>
+                       <span className="fw-bold">${s.amount.toFixed(2)}</span>
+                     </div>
+                   ))}
+                   <div className="border-top border-secondary mt-2 pt-2 d-flex justify-content-between align-items-center">
+                     <span className="text-muted">Total Cubierto</span>
+                     <span className="text-success fw-bold">${totalAssigned.toFixed(2)}</span>
+                   </div>
+                 </div>
+              )}
+
+              {remaining > 0.01 ? (
+                <div className="wizard-input-container">
+                  {wizardStep === 'amount' ? (
+                    <Form.Group>
+                      <Form.Label className="small mb-2 d-block text-center text-light opacity-75 uppercase" style={{ letterSpacing: '1px' }}>
+                        Saldo a Completar: <span className="text-white fw-bold">${remaining.toFixed(2)}</span>
+                      </Form.Label>
+                      <Form.Control
+                        ref={wizardInputRef}
+                        type="number"
+                        className="form-control-lg bg-dark text-white border-primary border-2 text-center fs-1 py-3"
+                        value={wizardAmount}
+                        onChange={(e) => setWizardAmount(e.target.value)}
+                        placeholder="0.00"
+                        autoComplete="off"
+                        autoFocus
+                        onFocus={(e) => e.target.select()}
+                      />
+                      <div className="mt-3 text-center text-muted small">
+                        <Badge bg="secondary" className="me-1">ENTER</Badge> para elegir método
+                      </div>
+                    </Form.Group>
+                  ) : wizardStep === 'customer' ? (
+                    <div className="animate__animated animate__fadeIn">
+                      <h4 className="text-center mb-3">Buscar Cliente para Cta Cte</h4>
+                      <Form.Control
+                        ref={wizardCustomerInputRef}
+                        type="text"
+                        placeholder="Nombre del cliente..."
+                        className="bg-dark text-white border-primary mb-3"
+                        value={wizardCustomerSearch}
+                        onChange={(e) => handleWizardCustomerSearch(e.target.value)}
+                        autoComplete="off"
+                      />
+                      {wizardCustomerResults.length > 0 ? (
+                        <ListGroup className="mb-3">
+                          {wizardCustomerResults.map((c, idx) => (
+                            <ListGroup.Item
+                              key={c.id}
+                              action
+                              className={`${wizardCustomerSelectedIndex === idx ? 'bg-primary text-white' : 'bg-dark text-white border-secondary'}`}
+                              onClick={() => selectCustomerFromWizard(c)}
+                            >
+                              <div className="d-flex justify-content-between align-items-center">
+                                <span>{c.name}</span>
+                                <Badge bg="info">ENTER</Badge>
+                              </div>
+                            </ListGroup.Item>
+                          ))}
+                        </ListGroup>
+                      ) : wizardCustomerSearch.length > 2 ? (
+                        <div className="text-center text-muted mb-3 small">No se encontraron clientes</div>
+                      ) : null}
+                      <div className="text-center">
+                        <Button variant="link" className="text-muted small" onClick={() => setWizardStep('method')}>
+                          [ESC] Volver a métodos
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center animate__animated animate__fadeIn">
+                      <h4 className="mb-3">¿Cómo se pagaron los <span className="text-primary">${parseFloat(wizardAmount).toFixed(2)}</span>?</h4>
+                      <div className="d-grid gap-2">
+                        <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('Efectivo')}>
+                          <span>💵 Efectivo</span>
+                          <Badge bg="primary">1</Badge>
+                        </Button>
+                        <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('MP')}>
+                          <span>📱 Mercado Pago</span>
+                          <Badge bg="primary">2</Badge>
+                        </Button>
+                        <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('Transferencia')}>
+                          <span>🏦 Transferencia</span>
+                          <Badge bg="primary">3</Badge>
+                        </Button>
+                        <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('Cta Cte')}>
+                          <span>💳 Cuenta Corriente</span>
+                          <Badge bg="primary">4</Badge>
+                        </Button>
+                      </div>
+                      <Button variant="link" className="text-muted mt-3 small" onClick={() => setWizardStep('amount')}>
+                        [ESC] Volver a monto
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-3 animate__animated animate__pulse animate__infinite">
+                  <div className="mb-4">
+                    <Badge bg="success" className="fs-5 p-3 px-4 rounded-pill">✓ PAGO COMPLETADO</Badge>
+                  </div>
+                  {remaining < -0.01 && (
+                    <div className="mb-4 p-3 bg-warning bg-opacity-10 rounded border border-warning border-opacity-25">
+                      <h6 className="text-warning uppercase small mb-1">Vuelto a entregar</h6>
+                      <h2 className="text-warning fw-bold mb-0">${Math.abs(remaining).toFixed(2)}</h2>
+                    </div>
+                  )}
+                  <Button variant="primary" size="lg" className="w-100 py-3 fs-3 fw-bold shadow-lg" onClick={() => { handleCheckout(); setShowPaymentWizard(false); }}>
+                    FINALIZAR VENTA [ENTER]
+                  </Button>
+                </div>
+              )}
+            </Modal.Body>
+          </Modal>
+        );
+      })()}
       
     </div>
   );

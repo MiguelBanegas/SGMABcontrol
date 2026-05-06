@@ -137,8 +137,28 @@ const Ticket = React.forwardRef(({ sale }, ref) => {
         }, 0)}</span>
       </div>
 
-      <div style={{ marginTop: '10px', fontSize: '10px', textAlign: 'right' }}>
-        <i>Medio de Pago: <b>{sale.payment_method || 'Efectivo'}</b></i>
+      <div style={{ marginTop: '12px', fontSize: '10px' }}>
+        <div style={{ borderBottom: '0.5px solid #eee', marginBottom: '5px', paddingBottom: '2px', fontWeight: 'bold', textTransform: 'uppercase' }}>Desglose de Pago</div>
+        {sale.payments && sale.payments.length > 0 ? (
+          sale.payments.map((p, idx) => (
+            <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+              <span>{p.method}:</span>
+              <b>${Number(p.amount).toFixed(2)}</b>
+            </div>
+          ))
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
+            <span>{sale.payment_method || 'Efectivo'}:</span>
+            <b>${Number(sale.total).toFixed(2)}</b>
+          </div>
+        )}
+        
+        {Number(sale.debt_amount) > 0 && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', color: '#d00', borderTop: '0.5px dashed #d00', paddingTop: '2px' }}>
+            <span>SALDO DEUDA:</span>
+            <b>${Number(sale.debt_amount).toFixed(2)}</b>
+          </div>
+        )}
       </div>
 
       <div style={{ textAlign: 'center', marginTop: '25px' }}>
