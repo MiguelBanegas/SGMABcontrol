@@ -1,6 +1,6 @@
 {
-  "name": "Proveeduria MAR FRANK",
-  "short_name": "MAR FRANK",
+  "name": "SG MAB Control y Gestion",
+  "short_name": "SG MAB",
   "description": "Sistema de Gestión de Ventas y Stock",
   "start_url": "/",
   "display": "standalone",

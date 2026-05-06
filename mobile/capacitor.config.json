@@ -1,6 +1,6 @@
 {
   "appId": "ar.mabcontrol.sgm",
-  "appName": "Proveeduria MAR FRANK",
+  "appName": "SG MAB Control y Gestion",
   "webDir": "dist",
   "server": {
     "androidScheme": "http",

@@ -119,8 +119,8 @@ function generateTicketHtml(sale) {
     </head>
     <body>
       <div class="center">
-        <h1 style="margin: 0; font-size: 20px;">Proveeduria MAR FRANK</h1>
-        <p style="margin: 2px 0; opacity: 0.8;">Proveeduria MAR FRANK</p>
+        <h1 style="margin: 0; font-size: 20px;">SG MAB Control y Gestion</h1>
+        <p style="margin: 2px 0; opacity: 0.8;">SG MAB Control y Gestion</p>
         <hr>
       </div>
       <div>
@@ -221,7 +221,7 @@ function generateAccountHtml(customer, balance, transactions) {
     <body>
       <div class="center">
         <h1 style="margin: 0; font-size: 18px;">ESTADO DE CUENTA</h1>
-        <p style="margin: 2px 0;">Proveeduria MAR FRANK</p>
+        <p style="margin: 2px 0;">SG MAB Control y Gestion</p>
         <hr>
       </div>
       <div>

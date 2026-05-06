@@ -17,7 +17,7 @@ export const formatTicketAsText = (sale) => {
     hour12: true,
   });
 
-  let message = `*Proveeduria MAR FRANK*\n`;
+  let message = `*SG MAB Control y Gestion*\n`;
   message += `_Comercio & Gestión_\n`;
   message += `--------------------------\n`;
   message += `*Fecha:* ${dateStr}\n`;

@@ -105,8 +105,8 @@ const Login = () => {
         <Card className="shadow-lg border-0 rounded-4">
           <Card.Body className="p-4 p-md-5">
             <div className="text-center mb-4">
-                <h1 className="fw-bold mb-1" style={{ color: '#2563eb' }}>MAR FRANK</h1>
-                <p className="text-muted small">Proveeduria MAR FRANK</p>
+                <h1 className="fw-bold mb-1" style={{ color: '#2563eb' }}>SG MAB</h1>
+                <p className="text-muted small">Control y Gestion</p>
             </div>
 
             {error && <Alert variant="danger" className="p-2 small mb-3">{error}</Alert>}
