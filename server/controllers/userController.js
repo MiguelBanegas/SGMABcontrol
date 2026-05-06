@@ -4,7 +4,7 @@ const bcrypt = require("bcryptjs");
 exports.getAllUsers = async (req, res) => {
   try {
     const users = await db("users")
-      .where({ business_id: req.user.business_id })
+      .where({ business_id: req.user.business_id, active: true })
       .select("id", "username", "role", "created_at");
     res.json(users);
   } catch (error) {
@@ -56,8 +56,9 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   const { id } = req.params;
   try {
-    // Evitar que el admin se borre a sí mismo si fuera necesario, o simplemente proceder
-    await db("users").where({ id, business_id: req.user.business_id }).del();
+    await db("users")
+      .where({ id, business_id: req.user.business_id })
+      .update({ active: false });
     res.json({ message: "Usuario eliminado" });
   } catch (error) {
     res.status(500).json({ message: "Error al eliminar usuario" });
