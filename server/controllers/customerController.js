@@ -61,29 +61,97 @@ exports.deleteCustomer = async (req, res) => {
   const business_id = req.user.business_id;
 
   try {
-    // 1. Verificar si tiene deuda
-    const balance = await getCustomerAdjustedBalance(id, business_id);
+    console.log(`[DELETE CUSTOMER] Iniciando eliminación de cliente ID: ${id}`);
 
-    if (balance > 0.01) {
-      return res.status(400).json({
-        message: `No se puede eliminar un cliente con deuda pendiente ($${balance.toFixed(
-          2
-        )})`,
+    // 0. Verificar que el cliente existe
+    const customer = await db("customers")
+      .where({ id, business_id })
+      .first();
+
+    if (!customer) {
+      return res.status(404).json({
+        code: "CUSTOMER_NOT_FOUND",
+        message: "Cliente no encontrado",
       });
     }
 
+    // 1. Verificar si tiene deuda pendiente
+    const balance = await getCustomerAdjustedBalance(id, business_id);
+
+    if (balance > 0.01) {
+      console.log(`[DELETE CUSTOMER] ❌ Cliente tiene deuda: $${balance}`);
+      return res.status(400).json({
+        code: "CUSTOMER_HAS_DEBT",
+        message: `No se puede eliminar un cliente con deuda pendiente ($${balance.toFixed(2)})`,
+        debt: balance,
+      });
+    }
+
+    // 2. Verificar si hay contenedores activos en préstamo
+    const activeContainers = await db("container_balances")
+      .where({ customer_id: id, business_id })
+      .where("balance", ">", 0);
+
+    if (activeContainers && activeContainers.length > 0) {
+      const totalContainers = activeContainers.reduce(
+        (sum, c) => sum + c.balance,
+        0
+      );
+      console.log(
+        `[DELETE CUSTOMER] ❌ Cliente tiene ${activeContainers.length} contenedor(es) activo(s)`
+      );
+      return res.status(400).json({
+        code: "CUSTOMER_HAS_ACTIVE_CONTAINERS",
+        message: `No se puede eliminar cliente con ${activeContainers.length} contenedor(es) activo(s). Total: ${totalContainers} unidades en préstamo`,
+        containers: activeContainers,
+        totalUnits: totalContainers,
+      });
+    }
+
+    // 3. Verificar si hay ventas pendientes en progreso
+    const pendingSale = await db("pending_sales")
+      .where({ customer_id: id })
+      .first();
+
+    if (pendingSale) {
+      console.log(`[DELETE CUSTOMER] ❌ Cliente tiene venta pendiente (ID: ${pendingSale.id})`);
+      return res.status(400).json({
+        code: "CUSTOMER_HAS_PENDING_SALE",
+        message: "No se puede eliminar cliente con venta pendiente. Completa o cancela la venta primero.",
+        pendingSaleId: pendingSale.id,
+      });
+    }
+
+    console.log(`[DELETE CUSTOMER] ✅ Todas las validaciones pasaron`);
+
     await db.transaction(async (trx) => {
-      // 2. Reasignar ventas a 'Consumidor Final' (NULL)
-      await trx("sales")
+      // 4. Reasignar ventas a 'Consumidor Final' (NULL)
+      const updatedSales = await trx("sales")
         .where({ customer_id: id, business_id })
         .update({ customer_id: null });
 
-      // 3. Eliminar físicamente (las transacciones de cuenta corriente se borran por CASCADE en la DB si existen y el balance es 0)
-      await trx("customers").where({ id, business_id }).del();
+      console.log(`[DELETE CUSTOMER] Reasignadas ${updatedSales} ventas`);
+
+      // 5. Limpiar container_balances de forma controlada (NO deletear)
+      const updatedContainers = await trx("container_balances")
+        .where({ customer_id: id, business_id })
+        .update({ customer_id: null, balance: 0 });
+
+      console.log(`[DELETE CUSTOMER] Limpiados ${updatedContainers} contenedores`);
+
+      // 6. Eliminar físicamente
+      const deleted = await trx("customers").where({ id, business_id }).del();
+
+      console.log(`[DELETE CUSTOMER] ✅ Cliente eliminado`);
+
+      return { updatedSales, updatedContainers, deleted };
     });
 
     res.json({
-      message: "Cliente eliminado y ventas reasignadas a Consumidor Final",
+      message: "Cliente eliminado con éxito",
+      details: {
+        customerName: customer.name,
+      },
     });
   } catch (error) {
     console.error("Error en deleteCustomer:", error);
