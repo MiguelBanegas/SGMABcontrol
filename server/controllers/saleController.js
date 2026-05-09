@@ -1451,6 +1451,23 @@ exports.updateSale = async (req, res) => {
             finalDebt <= 0.01 ? oldSale.settled_at || trx.fn.now() : null,
           created_at: created_at || oldSale.created_at,
         });
+
+      // 9. Actualizar sale_payments para reflejar el nuevo total con descuentos
+      const netPaid = parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+      if (payment_method === "Cta Cte") {
+        // Para ventas a cuenta corriente, amount = 0
+        await trx("sale_payments")
+          .where({ sale_id: id })
+          .update({ amount: 0 });
+      } else {
+        // Para otros métodos, amount = total (ya incluye descuentos)
+        await trx("sale_payments")
+          .where({ sale_id: id })
+          .update({ 
+            amount: total,
+            payment_method: payment_method || "Efectivo"
+          });
+      }
     }
 
     await trx.commit();
