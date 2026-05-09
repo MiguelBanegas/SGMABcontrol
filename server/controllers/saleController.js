@@ -1,5 +1,6 @@
 const db = require("../db");
 const { v4: uuidv4 } = require("uuid");
+const { validators } = require("../middleware/queryValidator");
 
 
 exports.createSale = async (req, res) => {
@@ -596,17 +597,20 @@ exports.getSalesHistory = async (req, res) => {
 
     // Filtro por fecha (por defecto: hoy)
     if (date) {
+      if (!validators.date(date)) {
+        return res.status(400).json({ message: "Parámetro de fecha inválido" });
+      }
       query = query.whereRaw("DATE(sales.created_at) = ?", [date]);
     }
 
     // Filtro por vendedor
     if (seller) {
-      query = query.where("users.username", "like", `%${seller}%`);
+      query = query.whereRaw("users.username LIKE ?", [`%${seller}%`]);
     }
 
     // Filtro por cliente
     if (customer) {
-      query = query.where("customers.name", "like", `%${customer}%`);
+      query = query.whereRaw("customers.name LIKE ?", [`%${customer}%`]);
     }
 
     // Filtro por método de pago
