@@ -2,6 +2,50 @@ const db = require("../db");
 const { v4: uuidv4 } = require("uuid");
 const { validators } = require("../middleware/queryValidator");
 
+function normalizePaymentsWithDiscount(payments, total) {
+  if (!Array.isArray(payments) || payments.length === 0) return [];
+
+  const normalized = payments
+    .map((p) => ({
+      method: p.method || p.payment_method || "Efectivo",
+      amount: parseFloat(p.amount || 0),
+    }))
+    .filter((p) => p.amount > 0);
+
+  const target = parseFloat(total || 0);
+  const nonAccountSum = normalized
+    .filter((p) => p.method !== "Cta Cte")
+    .reduce((sum, p) => sum + p.amount, 0);
+
+  if (nonAccountSum <= 0 || target < 0) return normalized;
+  if (Math.abs(nonAccountSum - target) <= 0.01) return normalized;
+
+  // Ajustar proporcionalmente solo medios no Cta Cte para que reflejen el total real cobrado.
+  const factor = target / nonAccountSum;
+  let adjustedNonAccountSum = 0;
+  const adjusted = normalized.map((p) => {
+    if (p.method === "Cta Cte") return p;
+    const newAmount = parseFloat((p.amount * factor).toFixed(2));
+    adjustedNonAccountSum += newAmount;
+    return { ...p, amount: newAmount };
+  });
+
+  // Corregir diferencia de redondeo en efectivo (o último medio no Cta Cte).
+  const roundingDiff = parseFloat((target - adjustedNonAccountSum).toFixed(2));
+  if (Math.abs(roundingDiff) > 0.009) {
+    const idxCash = adjusted.findIndex((p) => p.method === "Efectivo");
+    const idxFallback = adjusted.findIndex((p) => p.method !== "Cta Cte");
+    const idx = idxCash >= 0 ? idxCash : idxFallback;
+    if (idx >= 0) {
+      adjusted[idx].amount = parseFloat(
+        (adjusted[idx].amount + roundingDiff).toFixed(2),
+      );
+    }
+  }
+
+  return adjusted;
+}
+
 
 exports.createSale = async (req, res) => {
   const {
@@ -89,6 +133,10 @@ exports.createSale = async (req, res) => {
       })
       .first();
     const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
+    const hasCashPayment =
+      payment_method === "Efectivo" ||
+      (payments && Array.isArray(payments) &&
+        payments.some((p) => p.method === "Efectivo"));
 
     let subtotal = 0;
     const saleItems = [];
@@ -176,7 +224,7 @@ exports.createSale = async (req, res) => {
 
     // Aplicar descuento por efectivo
     let cashDiscount = 0;
-    if (payment_method === "Efectivo" && cashDiscountPercent > 0) {
+    if (hasCashPayment && cashDiscountPercent > 0) {
       cashDiscount = subtotal * (cashDiscountPercent / 100);
     }
 
@@ -224,7 +272,8 @@ exports.createSale = async (req, res) => {
 
     // Guardar desglose de pagos
     if (payments && Array.isArray(payments) && payments.length > 0) {
-      const paymentRecords = payments.map((p) => ({
+      const normalizedPayments = normalizePaymentsWithDiscount(payments, total);
+      const paymentRecords = normalizedPayments.map((p) => ({
         id: uuidv4(),
         sale_id: id,
         payment_method: p.method,
@@ -986,6 +1035,7 @@ exports.updateSale = async (req, res) => {
     payment_method,
     amount_paid,
     change_given,
+    payments,
     created_at, // Opcional, por si se quiere cambiar la fecha
   } = req.body;
   const user_id = req.user.id;
@@ -1078,6 +1128,10 @@ exports.updateSale = async (req, res) => {
       })
       .first();
     const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
+    const hasCashPayment =
+      payment_method === "Efectivo" ||
+      (payments && Array.isArray(payments) &&
+        payments.some((p) => p.method === "Efectivo"));
 
     let subtotal = 0;
     const newSaleItems = [];
@@ -1152,7 +1206,7 @@ exports.updateSale = async (req, res) => {
     }
 
     let cashDiscount = 0;
-    if (payment_method === "Efectivo" && cashDiscountPercent > 0) {
+    if (hasCashPayment && cashDiscountPercent > 0) {
       cashDiscount = subtotal * (cashDiscountPercent / 100);
     }
     const total = subtotal - cashDiscount;
@@ -1442,7 +1496,7 @@ exports.updateSale = async (req, res) => {
           subtotal,
           cash_discount: cashDiscount,
           total,
-          payment_method: payment_method || "Efectivo",
+          payment_method: effectivePaymentMethod,
           amount_paid: amount_paid || null,
           change_given: change_given || null,
           debt_amount: finalDebt > 0.01 ? finalDebt : null,
@@ -1453,20 +1507,28 @@ exports.updateSale = async (req, res) => {
         });
 
       // 9. Actualizar sale_payments para reflejar el nuevo total con descuentos
-      const netPaid = parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
-      if (payment_method === "Cta Cte") {
-        // Para ventas a cuenta corriente, amount = 0
-        await trx("sale_payments")
-          .where({ sale_id: id })
-          .update({ amount: 0 });
+      await trx("sale_payments").where({ sale_id: id }).delete();
+
+      if (payments && Array.isArray(payments) && payments.length > 0) {
+        const normalizedPayments = normalizePaymentsWithDiscount(payments, total);
+        const paymentRecords = normalizedPayments.map((p) => ({
+          id: uuidv4(),
+          sale_id: id,
+          payment_method: p.method || p.payment_method || "Efectivo",
+          amount: parseFloat(p.amount || 0),
+          business_id: req.user.business_id,
+          created_at: created_at || oldSale.created_at,
+        }));
+        await trx("sale_payments").insert(paymentRecords);
       } else {
-        // Para otros métodos, amount = total (ya incluye descuentos)
-        await trx("sale_payments")
-          .where({ sale_id: id })
-          .update({ 
-            amount: total,
-            payment_method: payment_method || "Efectivo"
-          });
+        await trx("sale_payments").insert({
+          id: uuidv4(),
+          sale_id: id,
+          payment_method: payment_method || "Efectivo",
+          amount: payment_method === "Cta Cte" ? 0 : total,
+          business_id: req.user.business_id,
+          created_at: created_at || oldSale.created_at,
+        });
       }
     }
 

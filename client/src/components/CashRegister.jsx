@@ -204,6 +204,7 @@ const CashRegister = () => {
   // Caja abierta - Calcular totales
   const expectedAmount = currentRegister.current_expected || 0;
   const cashSales = currentRegister.current_cash_sales || 0;
+  const cashDiscounts = currentRegister.current_cash_discounts || 0;
   const transferSales = currentRegister.current_transfer_sales || 0;
   const debitSales = currentRegister.current_debit_sales || 0;
   const creditSales = currentRegister.current_credit_sales || 0;
@@ -252,6 +253,12 @@ const CashRegister = () => {
                 <td>Ventas en efectivo</td>
                 <td className="text-end">+${cashSales.toFixed(2)}</td>
               </tr>
+              {cashDiscounts > 0 && (
+                <tr>
+                  <td className="text-muted">Desc. efectivo aplicados (info)</td>
+                  <td className="text-end text-muted">-${parseFloat(cashDiscounts).toFixed(2)}</td>
+                </tr>
+              )}
               {currentRegister.current_account_payments_cash > 0 && (
                 <tr className="table-success">
                   <td>Cobros de Cuenta Corriente (Efectivo)</td>

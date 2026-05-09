@@ -93,8 +93,13 @@ exports.closeCashRegister = async (req, res) => {
       .where({ cash_register_id: id })
       .sum("debt_amount as total")
       .first();
+    const cashDiscountsResult = await db("sales")
+      .where({ cash_register_id: id })
+      .sum("cash_discount as total")
+      .first();
 
     const account_sales = parseFloat(debtsResult.total || 0);
+    const cash_discounts = parseFloat(cashDiscountsResult.total || 0);
 
     // Obtener cobros de cuenta corriente separados por método
     const paymentsByMethod = await db("cash_movements")
@@ -169,6 +174,7 @@ exports.closeCashRegister = async (req, res) => {
       difference,
       totals: {
         cash: totals.cash,
+        cash_discounts,
         transfer: totals.transfer,
         debit: totals.debit,
         credit: totals.credit,
@@ -242,8 +248,13 @@ exports.getCurrentCashRegister = async (req, res) => {
       .where({ cash_register_id: cashRegister.id })
       .sum("debt_amount as total")
       .first();
+    const cashDiscountsResult = await db("sales")
+      .where({ cash_register_id: cashRegister.id })
+      .sum("cash_discount as total")
+      .first();
 
     const account_sales = parseFloat(debtsResult.total || 0);
+    const cash_discounts = parseFloat(cashDiscountsResult.total || 0);
 
     // Obtener cobros de cuenta corriente separados por método
     const paymentsByMethod = await db("cash_movements")
@@ -299,6 +310,7 @@ exports.getCurrentCashRegister = async (req, res) => {
     res.json({
       ...cashRegister,
       current_cash_sales: totals.cash,
+      current_cash_discounts: cash_discounts,
       current_transfer_sales:
         totals.transfer + account_payments_electronic.transfer,
       current_debit_sales: totals.debit + account_payments_electronic.debit,

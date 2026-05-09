@@ -6,6 +6,7 @@
  */
 
 const db = require("../db");
+const { v4: uuidv4 } = require("uuid");
 
 async function fixSalePaymentsDiscounts() {
   console.log("\n╔════════════════════════════════════════════════════╗");
@@ -22,14 +23,14 @@ async function fixSalePaymentsDiscounts() {
         s.total as sales_total,
         s.payment_method,
         s.cash_discount,
+        s.business_id,
         COALESCE(SUM(sp.amount), 0) as payments_total,
         COUNT(sp.id) as payment_count
       FROM sales s
       LEFT JOIN sale_payments sp ON s.id = sp.sale_id
       WHERE s.payment_method != 'Cta Cte'
-      GROUP BY s.id, s.total, s.payment_method, s.cash_discount
+      GROUP BY s.id, s.total, s.payment_method, s.cash_discount, s.business_id
       HAVING ABS(s.total - COALESCE(SUM(sp.amount), 0)) > 0.01
-      LIMIT 20
     `);
 
     if (problematicSales.rows.length === 0) {
@@ -39,36 +40,59 @@ async function fixSalePaymentsDiscounts() {
 
     console.log(`Se encontraron ${problematicSales.rows.length} ventas con problemas:\n`);
 
-    for (const sale of problematicSales.rows) {
-      console.log(`ID: ${sale.id.substring(0, 8)}...`);
-      console.log(`  sales.total: $${sale.sales_total}`);
-      console.log(`  payments SUM: $${sale.payments_total}`);
-      console.log(`  Método: ${sale.payment_method}`);
-      console.log(`  Descuento: $${sale.cash_discount || 0}`);
-      console.log(`  Diferencia: $${(sale.sales_total - sale.payments_total).toFixed(2)}\n`);
+    const previewCount = Math.min(problematicSales.rows.length, 20);
+    console.log(`Mostrando los primeros ${previewCount} registros para revisión rápida:`);
+    for (let i = 0; i < previewCount; i++) {
+      const sale = problematicSales.rows[i];
+      console.log(`ID: ${sale.id.substring(0, 8)}...  total=$${sale.sales_total}  pagos=$${sale.payments_total}  método=${sale.payment_method}`);
     }
 
-    // 2. Corregir las discrepancias
-    console.log("2. Corrigiendo sale_payments...\n");
+    console.log("\n2. Corrigiendo sale_payments...\n");
 
     let fixed = 0;
-    for (const sale of problematicSales.rows) {
-      if (sale.payment_method === "Cta Cte") {
-        // Para Cta Cte, amount debe ser 0
+    for (const [index, sale] of problematicSales.rows.entries()) {
+      const payments = await db("sale_payments").where({ sale_id: sale.id });
+
+      if (payments.length === 0) {
+        await db("sale_payments").insert({
+          id: uuidv4(),
+          sale_id: sale.id,
+          payment_method: sale.payment_method || "Efectivo",
+          amount: sale.sales_total,
+          business_id: sale.business_id,
+          created_at: new Date(),
+        });
+      } else if (sale.payment_method === "Cta Cte") {
         await db("sale_payments")
           .where({ sale_id: sale.id })
           .update({ amount: 0 });
-      } else {
-        // Para otros métodos, amount debe ser igual a sales.total
+      } else if (payments.length === 1) {
         await db("sale_payments")
           .where({ sale_id: sale.id })
-          .update({ 
-            amount: sale.sales_total,
-            payment_method: sale.payment_method
-          });
+          .update({ amount: sale.sales_total });
+      } else {
+        const mainPayment =
+          payments.find((p) => p.payment_method !== "Cta Cte") || payments[0];
+
+        await db("sale_payments")
+          .where({ id: mainPayment.id })
+          .update({ amount: sale.sales_total });
+
+        const otherPaymentIds = payments
+          .filter((p) => p.id !== mainPayment.id)
+          .map((p) => p.id);
+
+        if (otherPaymentIds.length > 0) {
+          await db("sale_payments")
+            .whereIn("id", otherPaymentIds)
+            .update({ amount: 0 });
+        }
       }
+
       fixed++;
-      console.log(`✅ Corregida venta ${sale.id.substring(0, 8)}...`);
+      if ((index + 1) % 1000 === 0 || index === problematicSales.rows.length - 1) {
+        console.log(`  Procesadas ${index + 1} / ${problematicSales.rows.length} ventas...`);
+      }
     }
 
     console.log(`\n📋 RESUMEN:`);
