@@ -3,6 +3,15 @@ import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
 const Ticket = React.forwardRef(({ sale }, ref) => {
+  const resolvePaymentLabel = (s) => {
+    if (s?.payments && Array.isArray(s.payments) && s.payments.length > 0) {
+      return s.payments.map((p) => p.payment_method || p.method).filter(Boolean).join(" + ");
+    }
+    const debt = Number(s?.debt_amount || 0);
+    const paid = Number(s?.amount_paid || 0);
+    if (debt > 0 && paid <= 0.01) return "Cta Cte";
+    return s?.payment_method || "Efectivo";
+  };
   if (!sale) return null;
 
   const totalItemSavings = sale.items.reduce((acc, item) => acc + Number(item.discount_amount), 0);
@@ -148,7 +157,7 @@ const Ticket = React.forwardRef(({ sale }, ref) => {
           ))
         ) : (
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '2px' }}>
-            <span>{sale.payment_method || 'Efectivo'}:</span>
+            <span>{resolvePaymentLabel(sale)}:</span>
             <b>${Number(sale.total).toFixed(2)}</b>
           </div>
         )}

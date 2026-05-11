@@ -23,6 +23,18 @@ function MySales() {
   const [customerToEdit, setCustomerToEdit] = useState(null);
   const [allCustomers, setAllCustomers] = useState([]);
   const [pendingWhatsAppSale, setPendingWhatsAppSale] = useState(null);
+  const resolvePaymentLabel = (sale) => {
+    if (sale?.payments && Array.isArray(sale.payments) && sale.payments.length > 0) {
+      return sale.payments
+        .map((p) => p.payment_method || p.method)
+        .filter(Boolean)
+        .join(' + ');
+    }
+    const debt = Number(sale?.debt_amount || 0);
+    const paid = Number(sale?.amount_paid || 0);
+    if (debt > 0 && paid <= 0.01) return 'Cta Cte';
+    return sale?.payment_method || 'Efectivo';
+  };
 
   useEffect(() => {
     loadSales(currentPage);
@@ -261,7 +273,7 @@ function MySales() {
         </div>
 
         <div class="right" style="font-size: 10px; margin-top: 10px;">
-          <i>Medio de Pago: <b>${sale.payment_method || 'Efectivo'}</b></i>
+          <i>Medio de Pago: <b>${resolvePaymentLabel(sale)}</b></i>
         </div>
         
         <div class="center" style="margin-top: 25px;">
@@ -446,7 +458,7 @@ function MySales() {
                               <div className="bg-primary bg-opacity-10 rounded px-3 py-1 mt-2 text-primary fw-bold">
                                 Cantidad de Productos: {sale.items.reduce((sum, item) => sum + (item.sell_by_weight ? 1 : parseFloat(item.quantity)), 0)}
                               </div>
-                              <div className="small mt-1 text-muted">Método: {sale.payment_method || 'Efectivo'}</div>
+                              <div className="small mt-1 text-muted">Método: {resolvePaymentLabel(sale)}</div>
                             </div>
                           </div>
                         </Collapse>
