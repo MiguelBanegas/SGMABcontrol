@@ -612,7 +612,7 @@ const Sales = () => {
         const currentSplits = paymentSplitsRef.current;
         const currentDiscount = cashDiscountPercentRef.current;
         const currentTotal = calculateTotal(currentCart);
-        const finalTotal = currentTotal - (currentSplits.some(s => s.method === 'Efectivo') ? currentTotal * (currentDiscount / 100) : 0);
+        const finalTotal = currentTotal - calculateCashDiscountFromSplits(currentTotal, currentSplits, currentDiscount);
         const totalAssigned = currentSplits.reduce((sum, s) => sum + s.amount, 0);
         const remaining = finalTotal - totalAssigned;
 
@@ -1006,7 +1006,7 @@ const Sales = () => {
     const currentCart = cartRef.current;
     const currentDiscount = cashDiscountPercentRef.current;
     const currentTotal = calculateTotal(currentCart);
-    const finalTotal = currentTotal - (newSplits.some(s => s.method === 'Efectivo') ? currentTotal * (currentDiscount / 100) : 0);
+    const finalTotal = currentTotal - calculateCashDiscountFromSplits(currentTotal, newSplits, currentDiscount);
     const totalAssigned = newSplits.reduce((sum, s) => sum + s.amount, 0);
     const newRemaining = finalTotal - totalAssigned;
 
@@ -1155,6 +1155,14 @@ const Sales = () => {
       const calc = calculateItemPrice(item);
       return sum + parseFloat(calc.subtotal);
     }, 0);
+  };
+
+  const calculateCashDiscountFromSplits = (subtotalAmount, splits, discountPercent) => {
+    const cashAmount = (splits || [])
+      .filter((s) => s.method === 'Efectivo')
+      .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
+    const eligibleCash = Math.max(0, Math.min(cashAmount, subtotalAmount));
+    return eligibleCash * ((parseFloat(discountPercent) || 0) / 100);
   };
 
   const listTotal = cart.reduce((sum, item) => {
@@ -1311,7 +1319,7 @@ const Sales = () => {
     const currentSplits = paymentSplitsRef.current;
     const currentDiscount = cashDiscountPercentRef.current;
     
-    const finalTotal = calculateTotal(currentCart) - (currentSplits.some(s => s.method === 'Efectivo') ? calculateTotal(currentCart) * (currentDiscount / 100) : 0);
+    const finalTotal = calculateTotal(currentCart) - calculateCashDiscountFromSplits(calculateTotal(currentCart), currentSplits, currentDiscount);
     
     // Calcular total pagado (excluyendo Cta Cte que es deuda)
     const paid = currentSplits
@@ -1346,7 +1354,7 @@ const Sales = () => {
       }),
       total: finalTotal,
       subtotal: calculateTotal(currentCart),
-      cash_discount: currentSplits.some(s => s.method === 'Efectivo') ? calculateTotal(currentCart) * (currentDiscount / 100) : 0,
+      cash_discount: calculateCashDiscountFromSplits(calculateTotal(currentCart), currentSplits, currentDiscount),
       customer_id: currentCustomer?.id || null,
       payment_method: finalPaymentMethod, // Método principal para reportes legacy
       payments: currentSplits.filter(p => p.amount > 0).map(p => ({
@@ -2314,7 +2322,8 @@ const Sales = () => {
 
       {/* --- WIZARD DE PAGO INTELIGENTE --- */}
       {(() => {
-        const finalTotal = total - (paymentSplits.some(s => s.method === 'Efectivo') ? total * (cashDiscountPercent / 100) : 0);
+        const finalTotal = total - calculateCashDiscountFromSplits(total, paymentSplits, cashDiscountPercent);
+        const cashDiscountApplied = calculateCashDiscountFromSplits(total, paymentSplits, cashDiscountPercent);
         const totalAssigned = paymentSplits.reduce((sum, s) => sum + s.amount, 0);
         const remaining = finalTotal - totalAssigned;
 
@@ -2394,12 +2403,18 @@ const Sales = () => {
                        <span className="fw-bold">${s.amount.toFixed(2)}</span>
                      </div>
                    ))}
-                   <div className="border-top border-secondary mt-2 pt-2 d-flex justify-content-between align-items-center">
-                     <span className="text-muted">Total Cubierto</span>
-                     <span className="text-success fw-bold">${totalAssigned.toFixed(2)}</span>
-                   </div>
-                 </div>
-              )}
+                    <div className="border-top border-secondary mt-2 pt-2 d-flex justify-content-between align-items-center">
+                      <span className="text-muted">Total Cubierto</span>
+                      <span className="text-success fw-bold">${totalAssigned.toFixed(2)}</span>
+                    </div>
+                    {cashDiscountApplied > 0 && (
+                      <div className="d-flex justify-content-between align-items-center mt-1">
+                        <span className="text-muted">Descuento efectivo aplicado</span>
+                        <span className="text-success fw-bold">-${cashDiscountApplied.toFixed(2)}</span>
+                      </div>
+                    )}
+                  </div>
+               )}
 
               {remaining > 0.01 ? (
                 <div className="wizard-input-container">

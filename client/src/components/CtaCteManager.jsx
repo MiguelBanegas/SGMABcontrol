@@ -175,6 +175,12 @@ const CtaCteManager = () => {
                           ))}
                         </tbody>
                         <tfoot>
+                          {Number(sale.cash_discount || 0) > 0 && (
+                            <tr>
+                              <td colSpan="3" className="text-end text-success">Desc. Efectivo:</td>
+                              <td className="text-end text-success">-${Number(sale.cash_discount).toFixed(2)}</td>
+                            </tr>
+                          )}
                           <tr className="fw-bold">
                             <td colSpan="3" className="text-end">TOTAL:</td>
                             <td className="text-end text-danger h5 mb-0">${Number(sale.total).toFixed(2)}</td>

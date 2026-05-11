@@ -40,7 +40,8 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
 
     const originalTotal = parseFloat(sale.total || 0);
     const initialPaid = parseFloat(sale.amount_paid || 0);
-    const originalDebt = originalTotal - initialPaid;
+    const creditApplied = parseFloat(sale.credit_applied || 0);
+    const originalDebt = originalTotal - initialPaid - creditApplied;
 
     // Pagos posteriores hechos a esta venta específica
     const linkedPayments = transactions
@@ -64,9 +65,10 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
           acc + parseFloat(item.quantity) * parseFloat(item.price_sell),
         0,
       );
+      const cashDiscount = parseFloat(sale.cash_discount || 0);
       const pendingForThisSale = Math.max(
         0,
-        currentTotal - initialPaid - linkedPayments,
+        currentTotal - cashDiscount - initialPaid - creditApplied - linkedPayments,
       );
       totalLinkedDebt += pendingForThisSale;
     } else {
@@ -138,7 +140,9 @@ exports.getCustomerTransactions = async (req, res) => {
           // Revalorización para el registro individual
           let revaluedAmount = parseFloat(transaction.amount);
           const originalDebt =
-            parseFloat(sale.total || 0) - parseFloat(sale.amount_paid || 0);
+            parseFloat(sale.total || 0) -
+            parseFloat(sale.amount_paid || 0) -
+            parseFloat(sale.credit_applied || 0);
 
           if (transaction.type === "debt" && linkedPaymentsSum < originalDebt) {
             const currentTotal = items.reduce(
@@ -147,9 +151,12 @@ exports.getCustomerTransactions = async (req, res) => {
                 parseFloat(item.quantity) * parseFloat(item.current_price_sell),
               0,
             );
+            const cashDiscount = parseFloat(sale.cash_discount || 0);
             revaluedAmount =
               currentTotal -
+              cashDiscount -
               parseFloat(sale.amount_paid || 0) -
+              parseFloat(sale.credit_applied || 0) -
               linkedPaymentsSum;
           } else if (
             transaction.type === "debt" &&
@@ -313,7 +320,9 @@ exports.recordPayment = async (req, res) => {
       );
 
       const originalDebt =
-        parseFloat(sale.total || 0) - parseFloat(sale.amount_paid || 0);
+        parseFloat(sale.total || 0) -
+        parseFloat(sale.amount_paid || 0) -
+        parseFloat(sale.credit_applied || 0);
 
       // Si se pagó la histórica O la revalorizada llega a 0
       if (linkedPaymentsSum >= originalDebt) {
@@ -329,8 +338,13 @@ exports.recordPayment = async (req, res) => {
             acc + parseFloat(item.quantity) * parseFloat(item.price_sell),
           0,
         );
+        const cashDiscount = parseFloat(sale.cash_discount || 0);
         const revaluedPending =
-          currentTotal - parseFloat(sale.amount_paid || 0) - linkedPaymentsSum;
+          currentTotal -
+          cashDiscount -
+          parseFloat(sale.amount_paid || 0) -
+          parseFloat(sale.credit_applied || 0) -
+          linkedPaymentsSum;
         if (revaluedPending <= 0.01) {
           await trx("sales")
             .where({ id: saleId })

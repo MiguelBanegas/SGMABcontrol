@@ -133,10 +133,6 @@ exports.createSale = async (req, res) => {
       })
       .first();
     const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
-    const hasCashPayment =
-      payment_method === "Efectivo" ||
-      (payments && Array.isArray(payments) &&
-        payments.some((p) => p.method === "Efectivo"));
 
     let subtotal = 0;
     const saleItems = [];
@@ -224,8 +220,17 @@ exports.createSale = async (req, res) => {
 
     // Aplicar descuento por efectivo
     let cashDiscount = 0;
-    if (hasCashPayment && cashDiscountPercent > 0) {
-      cashDiscount = subtotal * (cashDiscountPercent / 100);
+    if (cashDiscountPercent > 0) {
+      let eligibleCashAmount = 0;
+      if (payments && Array.isArray(payments) && payments.length > 0) {
+        eligibleCashAmount = payments
+          .filter((p) => (p.method || p.payment_method) === "Efectivo")
+          .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+      } else if (payment_method === "Efectivo") {
+        eligibleCashAmount = subtotal;
+      }
+      eligibleCashAmount = Math.max(0, Math.min(eligibleCashAmount, subtotal));
+      cashDiscount = eligibleCashAmount * (cashDiscountPercent / 100);
     }
 
     const total = subtotal - cashDiscount;
@@ -1128,10 +1133,6 @@ exports.updateSale = async (req, res) => {
       })
       .first();
     const cashDiscountPercent = parseFloat(cashDiscountSetting?.value || 0);
-    const hasCashPayment =
-      payment_method === "Efectivo" ||
-      (payments && Array.isArray(payments) &&
-        payments.some((p) => p.method === "Efectivo"));
 
     let subtotal = 0;
     const newSaleItems = [];
@@ -1206,8 +1207,17 @@ exports.updateSale = async (req, res) => {
     }
 
     let cashDiscount = 0;
-    if (hasCashPayment && cashDiscountPercent > 0) {
-      cashDiscount = subtotal * (cashDiscountPercent / 100);
+    if (cashDiscountPercent > 0) {
+      let eligibleCashAmount = 0;
+      if (payments && Array.isArray(payments) && payments.length > 0) {
+        eligibleCashAmount = payments
+          .filter((p) => (p.method || p.payment_method) === "Efectivo")
+          .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+      } else if (payment_method === "Efectivo") {
+        eligibleCashAmount = subtotal;
+      }
+      eligibleCashAmount = Math.max(0, Math.min(eligibleCashAmount, subtotal));
+      cashDiscount = eligibleCashAmount * (cashDiscountPercent / 100);
     }
     const total = subtotal - cashDiscount;
 

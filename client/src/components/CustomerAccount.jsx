@@ -179,6 +179,18 @@ const CustomerAccount = () => {
     }
   };
 
+  useEffect(() => {
+    if (selectedDebts.length === 1) {
+      const debtTx = transactions.find(
+        (t) => t.type === 'debt' && t.sale_id === selectedDebts[0]
+      );
+      if (debtTx) {
+        setPaymentAmount(Number(debtTx.revalued_amount || 0).toFixed(2));
+        setPaymentDescription('Pago de deuda actualizada seleccionada');
+      }
+    }
+  }, [selectedDebts, transactions]);
+
   const handleRecordPayment = async (e) => {
     e.preventDefault();
     
@@ -666,6 +678,12 @@ const CustomerAccount = () => {
                                              <span>Pagado al momento:</span>
                                              <span className="text-success">-${Number(transaction.original_sale?.amount_paid || 0).toFixed(2)}</span>
                                            </div>
+                                          {Number(transaction.original_sale?.cash_discount || 0) > 0 && (
+                                            <div className="d-flex justify-content-between mb-1">
+                                              <span>Desc. efectivo:</span>
+                                              <span className="text-success">-${Number(transaction.original_sale.cash_discount).toFixed(2)}</span>
+                                            </div>
+                                          )}
                                            {transaction.original_sale?.credit_applied > 0 && (
                                              <div className="d-flex justify-content-between mb-1">
                                                <span>Crédito aplicado:</span>
@@ -680,7 +698,14 @@ const CustomerAccount = () => {
                                           )}
                                           <div className="d-flex justify-content-between fw-bold border-top pt-1">
                                             <span>Deuda Inicial:</span>
-                                            <span className="text-danger">${Number(transaction.amount).toFixed(2)}</span>
+                                            <span className="text-danger">
+                                              ${Math.max(
+                                                0,
+                                                Number(transaction.original_sale?.total || 0) -
+                                                  Number(transaction.original_sale?.amount_paid || 0) -
+                                                  Number(transaction.original_sale?.credit_applied || 0)
+                                              ).toFixed(2)}
+                                            </span>
                                           </div>
                                         </Col>
                                         <Col md={6} className="border-start">
@@ -693,6 +718,12 @@ const CustomerAccount = () => {
                                              <span>Pagado inicial:</span>
                                              <span className="text-success">-${Number(transaction.original_sale?.amount_paid || 0).toFixed(2)}</span>
                                            </div>
+                                          {Number(transaction.original_sale?.cash_discount || 0) > 0 && (
+                                            <div className="d-flex justify-content-between mb-1">
+                                              <span>Desc. efectivo aplicado:</span>
+                                              <span className="text-success">-${Number(transaction.original_sale.cash_discount).toFixed(2)}</span>
+                                            </div>
+                                          )}
                                            {transaction.original_sale?.credit_applied > 0 && (
                                              <div className="d-flex justify-content-between mb-1">
                                                <span>Crédito usado:</span>
