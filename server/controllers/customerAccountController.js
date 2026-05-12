@@ -19,14 +19,7 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
 
   const adjustments = transactions
     .filter((t) => t.type === "adjustment")
-    .reduce(
-      (acc, t) =>
-        acc +
-        (t.type === "debt"
-          ? parseFloat(t.amount || 0)
-          : -parseFloat(t.amount || 0)),
-      0,
-    );
+    .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
 
   // 3. Ventas vinculadas
   const saleIds = [
@@ -93,14 +86,11 @@ exports.getCustomerTransactions = async (req, res) => {
       return res.status(404).json({ message: "Cliente no encontrado" });
     }
 
-    // Obtener el balance de la última transacción (sistema de partida doble)
-    const lastTransaction = await db("customer_account_transactions")
-      .where({ customer_id: id, business_id: req.user.business_id })
-      .orderBy("created_at", "desc")
-      .orderBy("id", "desc")
-      .first();
-
-    const balance = lastTransaction ? parseFloat(lastTransaction.balance) : 0;
+    // Balance ajustado/revalorizado (coincide con la deuda "Pagar HOY")
+    const balance = await exports.getCustomerAdjustedBalance(
+      id,
+      req.user.business_id,
+    );
 
     const transactions = await db("customer_account_transactions")
       .where({ customer_id: id, business_id: req.user.business_id })
@@ -180,7 +170,7 @@ exports.getCustomerTransactions = async (req, res) => {
 
     res.json({
       customer,
-      balance,
+      balance: parseFloat(balance.toFixed(2)),
       transactions: transactionsWithItemsAndPayments,
     });
   } catch (error) {
@@ -198,19 +188,11 @@ exports.getCustomerBalances = async (req, res) => {
 
     const customersWithBalances = await Promise.all(
       customers.map(async (customer) => {
-        // Obtener el balance de la última transacción
-        const lastTransaction = await db("customer_account_transactions")
-          .where({
-            customer_id: customer.id,
-            business_id: req.user.business_id,
-          })
-          .orderBy("created_at", "desc")
-          .orderBy("id", "desc")
-          .first();
-
-        const balance = lastTransaction
-          ? parseFloat(lastTransaction.balance)
-          : 0;
+        // Balance ajustado/revalorizado para mantener consistencia con el detalle
+        const balance = await exports.getCustomerAdjustedBalance(
+          customer.id,
+          req.user.business_id,
+        );
 
         return {
           ...customer,
