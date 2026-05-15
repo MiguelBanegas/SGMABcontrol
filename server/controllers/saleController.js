@@ -13,15 +13,24 @@ function normalizePaymentsWithDiscount(payments, total) {
     .filter((p) => p.amount > 0);
 
   const target = parseFloat(total || 0);
+  const accountSum = normalized
+    .filter((p) => p.method === "Cta Cte")
+    .reduce((sum, p) => sum + p.amount, 0);
   const nonAccountSum = normalized
     .filter((p) => p.method !== "Cta Cte")
     .reduce((sum, p) => sum + p.amount, 0);
 
-  if (nonAccountSum <= 0 || target < 0) return normalized;
-  if (Math.abs(nonAccountSum - target) <= 0.01) return normalized;
+  const totalCurrentSum = accountSum + nonAccountSum;
 
-  // Ajustar proporcionalmente solo medios no Cta Cte para que reflejen el total real cobrado.
-  const factor = target / nonAccountSum;
+  if (totalCurrentSum <= 0 || target < 0) return normalized;
+  if (Math.abs(totalCurrentSum - target) <= 0.01) return normalized;
+
+  // Ajustar proporcionalmente solo medios no Cta Cte (Efectivo, MP, etc.)
+  // El monto de Cta Cte se considera fijo ya que es la deuda asignada.
+  const remainingToCover = target - accountSum;
+  if (nonAccountSum <= 0) return normalized;
+
+  const factor = remainingToCover / nonAccountSum;
   let adjustedNonAccountSum = 0;
   const adjusted = normalized.map((p) => {
     if (p.method === "Cta Cte") return p;
@@ -31,7 +40,7 @@ function normalizePaymentsWithDiscount(payments, total) {
   });
 
   // Corregir diferencia de redondeo en efectivo (o último medio no Cta Cte).
-  const roundingDiff = parseFloat((target - adjustedNonAccountSum).toFixed(2));
+  const roundingDiff = parseFloat((remainingToCover - adjustedNonAccountSum).toFixed(2));
   if (Math.abs(roundingDiff) > 0.009) {
     const idxCash = adjusted.findIndex((p) => p.method === "Efectivo");
     const idxFallback = adjusted.findIndex((p) => p.method !== "Cta Cte");
@@ -218,19 +227,24 @@ exports.createSale = async (req, res) => {
       });
     }
 
-    // Aplicar descuento por efectivo
+    // Aplicar descuento por efectivo: SOLO si el pago es íntegramente en efectivo
     let cashDiscount = 0;
     if (cashDiscountPercent > 0) {
-      let eligibleCashAmount = 0;
+      let isTotalCash = false;
+
       if (payments && Array.isArray(payments) && payments.length > 0) {
-        eligibleCashAmount = payments
-          .filter((p) => (p.method || p.payment_method) === "Efectivo")
-          .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+        // Si hay desglose de pagos, comprobamos que solo haya Efectivo
+        const activePayments = payments.filter(p => parseFloat(p.amount || 0) > 0.01);
+        if (activePayments.length === 1 && (activePayments[0].method || activePayments[0].payment_method) === "Efectivo") {
+          isTotalCash = true;
+        }
       } else if (payment_method === "Efectivo") {
-        eligibleCashAmount = subtotal;
+        isTotalCash = true;
       }
-      eligibleCashAmount = Math.max(0, Math.min(eligibleCashAmount, subtotal));
-      cashDiscount = eligibleCashAmount * (cashDiscountPercent / 100);
+
+      if (isTotalCash) {
+        cashDiscount = subtotal * (cashDiscountPercent / 100);
+      }
     }
 
     const total = subtotal - cashDiscount;
