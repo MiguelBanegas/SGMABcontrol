@@ -310,20 +310,29 @@ exports.createSale = async (req, res) => {
         .first();
 
       if (customer && !customer.name.toLowerCase().includes("cons. final")) {
+        const normalizedPayments = normalizePaymentsWithDiscount(payments || [], total);
+        
         // Calcular cuánto pagó realmente (descontando el vuelto)
         let netPaid = 0;
         if (payments && Array.isArray(payments) && payments.length > 0) {
-          // El pago neto es todo lo que NO es Cta Cte
-          netPaid = payments
-            .filter((p) => p.method !== "Cta Cte")
-            .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+          if (normalizedPayments.length > 0) {
+            // El pago neto es todo lo que NO es Cta Cte
+            netPaid = normalizedPayments
+              .filter((p) => p.method !== "Cta Cte")
+              .reduce((sum, p) => sum + parseFloat(p.amount), 0);
+          } else {
+            netPaid =
+              payment_method === "Cta Cte"
+                ? 0
+                : parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
+          }
         } else {
           netPaid =
             payment_method === "Cta Cte"
               ? 0
               : parseFloat(amount_paid || 0) - parseFloat(change_given || 0);
         }
-        const remainingDebt = total - netPaid; // Deuda después del pago en efectivo/electrónico
+        const remainingDebt = total - netPaid; // Deuda de la venta antes de aplicar crédito previo
 
         // Obtener el balance ANTES de esta venta para la condición
         const lastTxBeforeCondition = await trx("customer_account_transactions")
@@ -377,19 +386,16 @@ exports.createSale = async (req, res) => {
             "currentBalance=",
             currentBalance,
           );
-          let creditUsed = 0;
+          const creditUsed = Math.max(
+            0,
+            Math.min(creditAvailable, Math.max(0, remainingDebt)),
+          );
+          const finalDebtForSale = Math.max(0, remainingDebt - creditUsed);
 
-          // Si tenía crédito (balance negativo) y ahora tiene deuda (balance positivo)
-          if (creditAvailable > 0 && currentBalance > 0) {
-            creditUsed = Math.min(creditAvailable, currentBalance);
-            currentBalance -= creditUsed;
-            console.log(
-              "DEBUG: Applying credit. creditUsed=",
-              creditUsed,
-              "new currentBalance=",
-              currentBalance,
-            );
-
+          if (creditUsed > 0) {
+            // El crédito aplicado no debe restar el balance de nuevo aquí porque el crédito ya existe
+            // como un pago negativo previo. Al sumar la deuda total arriba, ya se consume.
+            // Registramos la transacción vinculada únicamente para trazabilidad de la venta.
             await trx("customer_account_transactions").insert({
               customer_id,
               sale_id: id,
@@ -399,55 +405,18 @@ exports.createSale = async (req, res) => {
               description: `Crédito aplicado en Venta #${id.substring(0, 8)}`,
               business_id: req.user.business_id,
             });
-
-            // Actualizar credit_applied en la venta
-            await trx("sales")
-              .where({ id })
-              .update({
-                credit_applied: creditUsed,
-                debt_amount: remainingDebt > 0 ? remainingDebt : null,
-                status: currentBalance > 0 ? "pendiente" : "completado",
-                settled_at: currentBalance <= 0 ? trx.fn.now() : null,
-              });
-          } else if (creditAvailable > 0 && currentBalance <= 0) {
-            // El crédito cubrió TODA la deuda y aún sobra
-            creditUsed = total - netPaid; // Usó exactamente lo necesario para cubrir la deuda
-            console.log(
-              "DEBUG: Credit covered all debt. creditUsed=",
-              creditUsed,
-              "remaining credit=",
-              Math.abs(currentBalance),
-            );
-
-            await trx("customer_account_transactions").insert({
-              customer_id,
-              sale_id: id,
-              type: "payment",
-              amount: creditUsed,
-              balance: currentBalance,
-              description: `Crédito aplicado en Venta #${id.substring(0, 8)}`,
-              business_id: req.user.business_id,
-            });
-
-            // Actualizar credit_applied en la venta
-            await trx("sales")
-              .where({ id })
-              .update({
-                credit_applied: creditUsed,
-                debt_amount: remainingDebt > 0 ? remainingDebt : null, // Mantenemos la deuda original de la venta para control de caja
-                status: "completado", // Aunque tenga debt_amount, al estar cubierto por crédito el cliente no debe nada globalmente
-                settled_at: trx.fn.now(),
-              });
-          } else {
-            // Si no se aplicó crédito, actualizar la venta con la deuda actual
-            await trx("sales")
-              .where({ id })
-              .update({
-                debt_amount: remainingDebt > 0 ? remainingDebt : null,
-                status: currentBalance > 0 ? "pendiente" : "completado",
-                settled_at: currentBalance <= 0 ? trx.fn.now() : null,
-              });
           }
+
+          // El estado/saldo de la venta debe depender de su deuda propia,
+          // no del balance global del cliente.
+          await trx("sales")
+            .where({ id })
+            .update({
+              credit_applied: creditUsed,
+              debt_amount: finalDebtForSale > 0 ? finalDebtForSale : null,
+              status: finalDebtForSale > 0 ? "pendiente" : "completado",
+              settled_at: finalDebtForSale <= 0 ? trx.fn.now() : null,
+            });
 
           console.log(
             "Traceability split transactions recorded successfully. Final Customer Balance:",
@@ -872,7 +841,10 @@ exports.getMySales = async (req, res) => {
             "products.sku",
             "products.image_url",
           );
-        return { ...sale, items };
+        const payments = await db("sale_payments")
+          .where({ sale_id: sale.id })
+          .select("*"); // Seleccionar todos los campos de pago
+        return { ...sale, items, payments }; // ¡Faltaba este return!
       }),
     );
 
@@ -921,8 +893,11 @@ exports.getSaleDetail = async (req, res) => {
         "products.sku",
         "products.image_url",
       );
+    const payments = await db("sale_payments")
+      .where({ sale_id: sale.id })
+      .select("*"); // Seleccionar todos los campos de pago
 
-    res.json({ ...sale, items });
+    res.json({ ...sale, items, payments });
   } catch (error) {
     console.error("Error en getSaleDetail:", error);
     res.status(500).json({ message: "Error al obtener detalle de la venta" });

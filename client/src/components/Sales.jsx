@@ -641,9 +641,13 @@ const Sales = () => {
           // Si el input no tiene foco por alguna razón, forzar Enter
           if (e.key === 'Enter' && document.activeElement !== wizardInputRef.current) {
             e.preventDefault();
-            if (parseFloat(wizardAmountRef.current) > 0) {
-              setWizardStep('method');
-            }
+            const enteredAmount = parseFloat(wizardAmountRef.current) || 0;
+            const potentialDiscount = currentTotal * (currentDiscount / 100);
+            const totalWithDiscount = currentTotal - potentialDiscount;
+
+            // Permitir siempre elegir el método de pago del monto ingresado primero.
+            // La validación de cliente se hará solo si se elige "Cta Cte" o al intentar finalizar con deuda.
+            setWizardStep('method');
           }
         } else if (wizardStepRef.current === 'customer') {
           if (e.key === 'ArrowDown') {
@@ -915,6 +919,12 @@ const Sales = () => {
   };
 
   const addToCart = (product) => {
+    if (!currentRegister && !checkingRegister) {
+      toast.error('Debe abrir la caja antes de iniciar una venta');
+      setShowOpenRegisterModal(true);
+      return;
+    }
+
     if (product.sell_by_weight) {
       setCurrentWeightProduct(product);
       setWeightEditMode('add');
@@ -957,17 +967,19 @@ const Sales = () => {
     setPaymentSplits([]);
     setAmountPaid('0');
 
-    // Reiniciar a Consumidor Final por defecto
-    const defaultCustomer = customers.find(c => c.name.toLowerCase().includes('cons. final'));
-    if (defaultCustomer) {
-      selectCustomer(defaultCustomer);
-    }
-    
-    const currentDiscount = cashDiscountPercentRef.current;
     const currentTotal = calculateTotal(currentCart);
-    
-    // Al empezar de cero, el total es el subtotal de los productos
-    setWizardAmount(currentTotal.toFixed(2));
+    const currentCustomer = selectedCustomerRef.current;
+    const customerCredit =
+      currentCustomer &&
+      !currentCustomer.name?.toLowerCase().includes('cons. final') &&
+      Number(customerBalance || 0) < 0
+        ? Math.abs(Number(customerBalance || 0))
+        : 0;
+    // No asumir descuento hasta que el usuario elija el método de pago.
+    const suggestedDue = Math.max(0, currentTotal - customerCredit);
+
+    // Sugerir monto a cobrar luego de aplicar saldo a favor
+    setWizardAmount(suggestedDue.toFixed(2));
     setWizardStep('amount');
     setShowPaymentWizard(true);
   };
@@ -1158,11 +1170,25 @@ const Sales = () => {
   };
 
   const calculateCashDiscountFromSplits = (subtotalAmount, splits, discountPercent) => {
-    const cashAmount = (splits || [])
+    const parsedDiscount = (parseFloat(discountPercent) || 0) / 100;
+    if (parsedDiscount <= 0) return 0;
+
+    const validSplits = (splits || []).filter((s) => (parseFloat(s.amount) || 0) > 0);
+    const nonDebtSplits = validSplits.filter((s) => s.method !== 'Cta Cte');
+    const cashAmount = nonDebtSplits
       .filter((s) => s.method === 'Efectivo')
       .reduce((sum, s) => sum + (parseFloat(s.amount) || 0), 0);
-    const eligibleCash = Math.max(0, Math.min(cashAmount, subtotalAmount));
-    return eligibleCash * ((parseFloat(discountPercent) || 0) / 100);
+    const hasOnlyCashAsNonDebt = nonDebtSplits.length > 0 && nonDebtSplits.every((s) => s.method === 'Efectivo');
+    const hasMixedNonDebtMethods = nonDebtSplits.some((s) => s.method !== 'Efectivo');
+
+    // Regla de negocio: el descuento por efectivo SOLO aplica si la venta queda 100% en efectivo
+    // y el monto en efectivo alcanza para cubrir el total con descuento.
+    if (!hasOnlyCashAsNonDebt || hasMixedNonDebtMethods) return 0;
+
+    const discountedTotal = subtotalAmount * (1 - parsedDiscount);
+    if (cashAmount + 0.01 < discountedTotal) return 0;
+
+    return subtotalAmount * parsedDiscount;
   };
 
   const listTotal = cart.reduce((sum, item) => {
@@ -1470,8 +1496,8 @@ const Sales = () => {
         <span>
           <b>{successMessage}</b> {isOnline ? '' : '(Offline)'}
           {difference >= 0 && difference > 0 && (
-            <div className="mt-1 small">
-              Vuelto: <strong>${difference.toFixed(2)}</strong>
+            <div className="mt-2 h3 mb-0">
+              Vuelto: <strong className="text-danger">${difference.toFixed(2)}</strong>
             </div>
           )}
           <div className="d-flex flex-column gap-2 mt-2">
@@ -1998,22 +2024,22 @@ const Sales = () => {
 
             {/* Resumen Venta Anterior */}
             {lastCompletedSale && (
-              <div className="mb-4 bg-secondary bg-opacity-10 p-3 rounded border border-secondary border-opacity-25 shadow-sm">
-                <h6 className="small text-muted uppercase mb-2 border-bottom border-secondary border-opacity-25 pb-1 font-monospace" style={{ letterSpacing: '1px' }}>
+              <div className="mb-4 bg-black bg-opacity-25 p-3 rounded border border-secondary border-opacity-50 shadow-sm">
+                <h6 className="small text-info text-uppercase mb-2 border-bottom border-info border-opacity-25 pb-1 font-monospace" style={{ letterSpacing: '1px' }}>
                   Última Venta
                 </h6>
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="small text-muted text-uppercase">Cliente:</span>
-                  <span className="small fw-bold">{lastCompletedSale.customer_name || 'Cons. Final'}</span>
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <span className="text-white-50 text-uppercase small">Cliente:</span>
+                  <span className="fw-bold fs-5">{lastCompletedSale.customer_name || 'Cons. Final'}</span>
                 </div>
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="small text-muted text-uppercase">Monto:</span>
-                  <span className="small fw-bold text-info">${lastCompletedSale.total.toFixed(2)}</span>
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <span className="text-white-50 text-uppercase small">Monto:</span>
+                  <span className="fw-bold text-info fs-4">${lastCompletedSale.total.toFixed(2)}</span>
                 </div>
                 {lastCompletedSale.amount_paid > lastCompletedSale.total && (
-                  <div className="d-flex justify-content-between">
-                    <span className="small text-muted text-uppercase">Vuelto:</span>
-                    <span className="small fw-bold text-warning">${(lastCompletedSale.amount_paid - lastCompletedSale.total).toFixed(2)}</span>
+                  <div className="d-flex justify-content-between align-items-center mt-1 border-top border-secondary border-opacity-25 pt-1">
+                    <span className="text-white-50 text-uppercase small">Vuelto:</span>
+                    <span className="fw-bold text-warning fs-4">${(lastCompletedSale.amount_paid - lastCompletedSale.total).toFixed(2)}</span>
                   </div>
                 )}
               </div>
@@ -2322,23 +2348,45 @@ const Sales = () => {
 
       {/* --- WIZARD DE PAGO INTELIGENTE --- */}
       {(() => {
-        const finalTotal = total - calculateCashDiscountFromSplits(total, paymentSplits, cashDiscountPercent);
-        const cashDiscountApplied = calculateCashDiscountFromSplits(total, paymentSplits, cashDiscountPercent);
+        const hasSplits = paymentSplits.length > 0;
+        // No mostrar/aplicar descuento por efectivo hasta que el usuario elija método(s) de pago.
+        const cashDiscountApplied = hasSplits
+          ? calculateCashDiscountFromSplits(total, paymentSplits, cashDiscountPercent)
+          : 0;
+        const finalTotal = total - cashDiscountApplied;
+        const eligibleCustomerCredit =
+          selectedCustomer &&
+          !selectedCustomer.name?.toLowerCase().includes('cons. final') &&
+          Number(customerBalance || 0) < 0
+            ? Math.abs(Number(customerBalance || 0))
+            : 0;
+        const creditToApply = Math.min(eligibleCustomerCredit, finalTotal);
+        const dueAfterCredit = Math.max(0, finalTotal - creditToApply);
         const totalAssigned = paymentSplits.reduce((sum, s) => sum + s.amount, 0);
-        const remaining = finalTotal - totalAssigned;
+        const remaining = dueAfterCredit - totalAssigned;
 
         const handleWizardKeyDown = (e) => {
-          if (wizardStep === 'amount') {
-            if (e.key === 'Enter') {
+          if (e.key === 'Enter') {
+            // Si el pago ya está cubierto (ej: después del primer enter en pago rápido), finalizar
+            if (remaining <= 0.01) {
               e.preventDefault();
-              if (parseFloat(wizardAmount) > 0) {
-                setWizardStep('method');
-              } else if (Math.abs(remaining) < 0.01) {
-                handleCheckout();
-                setShowPaymentWizard(false);
-              }
+              handleCheckout();
+              setShowPaymentWizard(false);
+              return;
+            }
+
+            if (wizardStep === 'amount') {
+              e.preventDefault();
+              // Agilidad: Primero preguntamos cómo paga lo que ingresó.
+              // Si queda un saldo pendiente, el asistente volverá a pedir el monto/método.
+              setWizardStep('method');
             }
           } else if (wizardStep === 'method') {
+            if (e.key === 'Enter' && paymentSplits.length === 0) {
+              e.preventDefault();
+              addWizardPayment('Efectivo');
+              return;
+            }
             if (['1', '2', '3', '4'].includes(e.key)) {
               e.preventDefault();
               const methods = { '1': 'Efectivo', '2': 'MP', '3': 'Transferencia', '4': 'Cta Cte' };
@@ -2375,9 +2423,36 @@ const Sales = () => {
               <div className="text-center mb-4">
                 <h6 className="text-muted uppercase small mb-1">Total a Cobrar</h6>
                 <h1 className="display-4 fw-bold text-primary">${finalTotal.toFixed(2)}</h1>
+                {creditToApply > 0 && (
+                  <div className="mt-2 small">
+                    <div className="text-success">Saldo a favor aplicado: -${creditToApply.toFixed(2)}</div>
+                    <div className="text-info fw-bold">Total final a pagar: ${dueAfterCredit.toFixed(2)}</div>
+                  </div>
+                )}
+                <div className="mt-3">
+                  <div className="small text-muted mb-1">Cliente del ticket</div>
+                  <div className="d-flex justify-content-center align-items-center gap-2">
+                    <Badge bg="secondary" className="p-2 px-3 rounded-pill shadow-sm">
+                      {selectedCustomer?.name || 'Cons. Final'}
+                    </Badge>
+                    <Button
+                      variant="outline-info"
+                      size="sm"
+                      onClick={() => {
+                        setWizardCustomerSearch('');
+                        setWizardCustomerResults([]);
+                        setWizardCustomerSelectedIndex(0);
+                        setWizardStep('customer');
+                        setTimeout(() => wizardCustomerInputRef.current?.focus(), 50);
+                      }}
+                    >
+                      Cambiar
+                    </Button>
+                  </div>
+                </div>
                 {selectedCustomer && (
                   <div className="mt-2">
-                    <Badge bg={customerBalance > 0 ? "danger" : customerBalance < 0 ? "success" : "secondary"} className="p-2 px-3 rounded-pill shadow-sm">
+                    <Badge bg={customerBalance > 0 ? "danger" : customerBalance < 0 ? "success" : "info"} className="p-2 px-3 rounded-pill shadow-sm">
                       {customerBalance > 0 ? (
                         <span className="d-flex align-items-center"><TrendingUp size={14} className="me-1"/> Deuda {selectedCustomer.name}: ${customerBalance.toFixed(2)}</span>
                       ) : customerBalance < 0 ? (
@@ -2390,12 +2465,13 @@ const Sales = () => {
                 )}
               </div>
 
-              {paymentSplits.length > 0 && (
-                 <div className="mb-4 bg-black bg-opacity-25 p-3 rounded border border-secondary border-opacity-25">
+                {paymentSplits.length > 0 && (
+                 <div className="mb-4 bg-black bg-opacity-25 p-3 rounded border border-primary border-opacity-25 shadow-inner">
+                   <div className="small text-primary uppercase mb-2 fw-bold" style={{ fontSize: '0.7rem' }}>Desglose de Pago Combinado</div>
                    {paymentSplits.map((s, idx) => (
                      <div key={idx} className="d-flex justify-content-between align-items-center mb-1">
                        <div className="d-flex align-items-center gap-2">
-                         <Button variant="link" size="sm" className="text-danger p-0" onClick={() => setPaymentSplits(paymentSplits.filter((_, i) => i !== idx))}>
+                         <Button variant="link" size="sm" className="text-danger p-0 m-0" onClick={() => setPaymentSplits(paymentSplits.filter((_, i) => i !== idx))}>
                            <Trash2 size={14} />
                          </Button>
                          <span>{s.method}</span>
@@ -2403,18 +2479,42 @@ const Sales = () => {
                        <span className="fw-bold">${s.amount.toFixed(2)}</span>
                      </div>
                    ))}
-                    <div className="border-top border-secondary mt-2 pt-2 d-flex justify-content-between align-items-center">
-                      <span className="text-muted">Total Cubierto</span>
-                      <span className="text-success fw-bold">${totalAssigned.toFixed(2)}</span>
-                    </div>
-                    {cashDiscountApplied > 0 && (
-                      <div className="d-flex justify-content-between align-items-center mt-1">
-                        <span className="text-muted">Descuento efectivo aplicado</span>
-                        <span className="text-success fw-bold">-${cashDiscountApplied.toFixed(2)}</span>
-                      </div>
+                     <div className="border-top border-secondary mt-2 pt-2 d-flex justify-content-between align-items-center">
+                       <span className="text-muted">Total Cubierto</span>
+                       <span className="text-success fw-bold">${totalAssigned.toFixed(2)}</span>
+                     </div>
+                     {creditToApply > 0 && (
+                       <>
+                         <div className="d-flex justify-content-between align-items-center mt-1">
+                           <span className="text-muted">Pagos reales ingresados</span>
+                           <span className="text-info fw-bold">${totalAssigned.toFixed(2)}</span>
+                         </div>
+                         <div className="d-flex justify-content-between align-items-center mt-1">
+                           <span className="text-muted">Crédito a favor aplicado</span>
+                           <span className="text-success fw-bold">-${creditToApply.toFixed(2)}</span>
+                         </div>
+                         <div className="d-flex justify-content-between align-items-center mt-1 border-top border-secondary pt-1">
+                           <span className="text-muted">Cobertura total de venta</span>
+                           <span className="text-success fw-bold">${(totalAssigned + creditToApply).toFixed(2)}</span>
+                         </div>
+                       </>
+                     )}
+                     {cashDiscountApplied > 0 && (
+                       <div className="d-flex justify-content-between align-items-center mt-1">
+                         <span className="text-muted">Descuento efectivo aplicado</span>
+                         <span className="text-success fw-bold">-${cashDiscountApplied.toFixed(2)}</span>
+                       </div>
                     )}
                   </div>
                )}
+
+              {paymentSplits.length > 0 &&
+                paymentSplits.every((s) => s.method === 'Efectivo') &&
+                remaining > 0.01 && (
+                  <Alert variant="warning" className="mb-3 py-2 px-3">
+                    Pago en efectivo insuficiente: no corresponde descuento por efectivo. Seleccione cliente y combine formas de pago.
+                  </Alert>
+                )}
 
               {remaining > 0.01 ? (
                 <div className="wizard-input-container">
@@ -2440,7 +2540,7 @@ const Sales = () => {
                     </Form.Group>
                   ) : wizardStep === 'customer' ? (
                     <div className="animate__animated animate__fadeIn">
-                      <h4 className="text-center mb-3">Buscar Cliente para Cta Cte</h4>
+                      <h4 className="text-center mb-3">Buscar Cliente para el Ticket</h4>
                       <Form.Control
                         ref={wizardCustomerInputRef}
                         type="text"
@@ -2469,7 +2569,26 @@ const Sales = () => {
                       ) : wizardCustomerSearch.length > 2 ? (
                         <div className="text-center text-muted mb-3 small">No se encontraron clientes</div>
                       ) : null}
-                      <div className="text-center">
+                      <div className="text-center d-flex justify-content-center gap-2">
+                        <Button
+                          variant="outline-secondary"
+                          size="sm"
+                          onClick={() => {
+                            const defaultCustomer = customers.find(c =>
+                              c.name.toLowerCase().includes('cons. final') ||
+                              c.name.toLowerCase().includes('consumidor final')
+                            );
+                            if (defaultCustomer) {
+                              selectCustomer(defaultCustomer);
+                              setWizardStep('method');
+                              setTimeout(() => wizardInputRef.current?.focus(), 50);
+                            } else {
+                              toast.error('No se encontró el cliente Cons. Final');
+                            }
+                          }}
+                        >
+                          Usar Cons. Final
+                        </Button>
                         <Button variant="link" className="text-muted small" onClick={() => setWizardStep('method')}>
                           [ESC] Volver a métodos
                         </Button>
@@ -2480,7 +2599,7 @@ const Sales = () => {
                       <h4 className="mb-3">¿Cómo se pagaron los <span className="text-primary">${parseFloat(wizardAmount).toFixed(2)}</span>?</h4>
                       <div className="d-grid gap-2">
                         <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('Efectivo')}>
-                          <span>💵 Efectivo</span>
+                          <span>💵 Efectivo <small className="opacity-50">(ENTER)</small></span>
                           <Badge bg="primary">1</Badge>
                         </Button>
                         <Button variant="outline-light" className="text-start py-3 fs-5 d-flex justify-content-between" onClick={() => addWizardPayment('MP')}>
@@ -2522,7 +2641,6 @@ const Sales = () => {
           </Modal>
         );
       })()}
-      
     </div>
   );
 };

@@ -13,6 +13,13 @@ const CustomerAccount = () => {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [balance, setBalance] = useState(0);
+  const [balanceBreakdown, setBalanceBreakdown] = useState({
+    updatedDebtsTotal: 0,
+    unlinkedPayments: 0,
+    linkedCreditApplied: 0,
+    availableAccountCredit: 0,
+    netBalance: 0,
+  });
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentDescription, setPaymentDescription] = useState('');
@@ -73,6 +80,13 @@ const CustomerAccount = () => {
       });
       setTransactions(response.data.transactions || []);
       setBalance(response.data.balance);
+      setBalanceBreakdown(response.data.breakdown || {
+        updatedDebtsTotal: 0,
+        unlinkedPayments: 0,
+        linkedCreditApplied: 0,
+        availableAccountCredit: 0,
+        netBalance: response.data.balance || 0,
+      });
       setSelectedCustomer(response.data.customer);
       setSelectedDebts([]); // Reset selection when changing customer
       fetchContainerData(customerId);
@@ -415,6 +429,12 @@ const CustomerAccount = () => {
                       <h2 className={balance > 0 ? 'text-danger' : 'text-success'}>
                         ${Number(balance).toFixed(2)}
                       </h2>
+                      <div className="small text-muted">
+                        ${Number(balanceBreakdown.updatedDebtsTotal).toFixed(2)} (deudas actualizadas)
+                      </div>
+                      <div className="small text-muted">
+                        - ${Number(balanceBreakdown.availableAccountCredit).toFixed(2)} (crédito a cuenta disponible)
+                      </div>
                     </Col>
                   </Row>
                 </Card.Body>

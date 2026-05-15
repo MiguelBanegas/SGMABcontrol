@@ -1,29 +1,28 @@
 const db = require("../db");
 
-// Helper para calcular el balance ajustado por inflación de un cliente
-exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
+// Helper para calcular desglose de saldo de cuenta corriente
+exports.getCustomerBalanceBreakdown = async function (customerId, businessId) {
   // 1. Obtener todas las transacciones del cliente
   const transactions = await db("customer_account_transactions").where({
     customer_id: customerId,
     business_id: businessId,
   });
 
-  // 2. Pagos y deudas sin vinculación a una venta
+  // 2. Deudas sin vinculación a venta (se toman tal cual)
+  const unlinkedDebts = transactions
+    .filter((t) => t.type === "debt" && !t.sale_id)
+    .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
   const unlinkedPayments = transactions
     .filter((t) => t.type === "payment" && !t.sale_id)
     .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
 
-  const unlinkedDebts = transactions
-    .filter((t) => t.type === "debt" && !t.sale_id)
-    .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
-
-  const adjustments = transactions
-    .filter((t) => t.type === "adjustment")
-    .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
-
-  // 3. Ventas vinculadas
+  // 3. Deudas vinculadas a ventas (revalorizadas al precio actual)
   const saleIds = [
-    ...new Set(transactions.filter((t) => t.sale_id).map((t) => t.sale_id)),
+    ...new Set(
+      transactions
+        .filter((t) => t.type === "debt" && t.sale_id)
+        .map((t) => t.sale_id),
+    ),
   ];
   let totalLinkedDebt = 0;
 
@@ -37,8 +36,15 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
     const originalDebt = originalTotal - initialPaid - creditApplied;
 
     // Pagos posteriores hechos a esta venta específica
+    // Excluir pagos iniciales registrados junto con la venta para no
+    // descontarlos dos veces (ya están reflejados en sale.amount_paid).
+    const saleCreatedAt = new Date(sale.created_at).getTime();
     const linkedPayments = transactions
-      .filter((t) => t.type === "payment" && t.sale_id === saleId)
+      .filter((t) => {
+        if (t.type !== "payment" || t.sale_id !== saleId) return false;
+        const paymentCreatedAt = new Date(t.created_at).getTime();
+        return Math.abs(paymentCreatedAt - saleCreatedAt) > 5000;
+      })
       .reduce((acc, t) => acc + parseFloat(t.amount || 0), 0);
 
     // Si la deuda original está SALDADA (se pagó el 100% de la deuda histórica),
@@ -64,13 +70,37 @@ exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
         currentTotal - cashDiscount - initialPaid - creditApplied - linkedPayments,
       );
       totalLinkedDebt += pendingForThisSale;
-    } else {
-      // Contado o pago en exceso
-      totalLinkedDebt -= linkedPayments;
     }
   }
 
-  return totalLinkedDebt + unlinkedDebts - unlinkedPayments + adjustments;
+  const updatedDebtsTotal = totalLinkedDebt + unlinkedDebts;
+  
+  // El crédito disponible son los pagos sin venta (A Cuenta), 
+  // menos lo que ya se consumió aplicándolo a deudas de ventas.
+  const creditAppliedOnSalesResult = await db("sales")
+    .where({ customer_id: customerId, business_id: businessId })
+    .sum("credit_applied as total")
+    .first();
+  const totalCreditApplied = parseFloat(creditAppliedOnSalesResult.total || 0);
+
+  const availableAccountCredit = Math.max(0, unlinkedPayments - totalCreditApplied);
+  const balance = updatedDebtsTotal - availableAccountCredit;
+
+  return {
+    updatedDebtsTotal,
+    unlinkedPayments,
+    availableAccountCredit,
+    balance,
+  };
+};
+
+// Compatibilidad con código existente
+exports.getCustomerAdjustedBalance = async function (customerId, businessId) {
+  const breakdown = await exports.getCustomerBalanceBreakdown(
+    customerId,
+    businessId,
+  );
+  return breakdown.balance;
 };
 
 // Obtener transacciones de un cliente
@@ -87,7 +117,7 @@ exports.getCustomerTransactions = async (req, res) => {
     }
 
     // Balance ajustado/revalorizado (coincide con la deuda "Pagar HOY")
-    const balance = await exports.getCustomerAdjustedBalance(
+    const breakdown = await exports.getCustomerBalanceBreakdown(
       id,
       req.user.business_id,
     );
@@ -170,7 +200,15 @@ exports.getCustomerTransactions = async (req, res) => {
 
     res.json({
       customer,
-      balance: parseFloat(balance.toFixed(2)),
+      balance: parseFloat(breakdown.balance.toFixed(2)),
+      breakdown: {
+        updatedDebtsTotal: parseFloat(breakdown.updatedDebtsTotal.toFixed(2)),
+        unlinkedPayments: parseFloat(breakdown.unlinkedPayments.toFixed(2)),
+        availableAccountCredit: parseFloat(
+          breakdown.availableAccountCredit.toFixed(2),
+        ),
+        netBalance: parseFloat(breakdown.balance.toFixed(2)),
+      },
       transactions: transactionsWithItemsAndPayments,
     });
   } catch (error) {
@@ -189,14 +227,14 @@ exports.getCustomerBalances = async (req, res) => {
     const customersWithBalances = await Promise.all(
       customers.map(async (customer) => {
         // Balance ajustado/revalorizado para mantener consistencia con el detalle
-        const balance = await exports.getCustomerAdjustedBalance(
+        const breakdown = await exports.getCustomerBalanceBreakdown(
           customer.id,
           req.user.business_id,
         );
 
         return {
           ...customer,
-          balance: parseFloat(balance.toFixed(2)),
+          balance: parseFloat(breakdown.balance.toFixed(2)),
         };
       }),
     );
