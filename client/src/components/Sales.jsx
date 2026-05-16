@@ -71,6 +71,8 @@ const Sales = () => {
   const [wizardCustomerResults, setWizardCustomerResults] = useState([]);
   const [wizardCustomerSelectedIndex, setWizardCustomerSelectedIndex] = useState(-1);
   const wizardCustomerInputRef = useRef(null);
+  const [wizardLockEnter, setWizardLockEnter] = useState(false);
+  const wizardLockEnterRef = useRef(false);
   const [autoWhatsApp, setAutoWhatsApp] = useState(() => {
     const saved = localStorage.getItem('auto_whatsapp');
     return saved === null ? false : saved === 'true';
@@ -171,6 +173,10 @@ const Sales = () => {
   useEffect(() => {
     customerBalanceRef.current = customerBalance;
   }, [customerBalance]);
+
+  useEffect(() => {
+    wizardLockEnterRef.current = wizardLockEnter;
+  }, [wizardLockEnter]);
 
   // Sincronizar cart con el tab activo
   useEffect(() => {
@@ -649,15 +655,13 @@ const Sales = () => {
           headers: { Authorization: `Bearer ${token}` }
         })
           .then(res => {
-            setCustomers(res.data);
-            // No cargamos todos al estado para evitar lentitud; solo sincronizamos Dexie
+            // Sincronizamos la DB local pero NO cargamos todo al estado de React para evitar lentitud
             syncCustomers(res.data);
             
             const defaultCustomer = res.data.find(c => c.name.toLowerCase().includes('cons. final'));
-            if (defaultCustomer) setSelectedCustomer(defaultCustomer);
             if (defaultCustomer) {
               setSelectedCustomer(defaultCustomer);
-              setCustomers([defaultCustomer]);
+              setCustomers([defaultCustomer]); 
             }
           })
           .catch(err => console.error('Error al sincronizar clientes', err));
@@ -1042,13 +1046,32 @@ const currentCart = cartRef.current;
 
   const handleWizardCustomerSearch = async (term) => {
     setWizardCustomerSearch(term);
-    if (term.length > 2) {
+    if (term.length >= 1) {
+      // Búsqueda optimizada en IndexedDB: primero por prefijo (muy rápido)
       const results = await db.customers
-        .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
-        .limit(5)
+        .where('name')
+        .startsWithIgnoreCase(term)
+        .limit(10)
         .toArray();
-      setWizardCustomerResults(results);
-      setWizardCustomerSelectedIndex(results.length > 0 ? 0 : -1);
+      
+      // Si hay pocos resultados por prefijo, buscamos por inclusión (más lento pero más flexible)
+      if (results.length < 3 && term.length > 2) {
+        const moreResults = await db.customers
+          .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
+          .limit(10)
+          .toArray();
+        
+        // Unificar resultados evitando duplicados
+        const combined = [...results];
+        moreResults.forEach(r => {
+          if (!combined.find(c => c.id === r.id)) combined.push(r);
+        });
+        setWizardCustomerResults(combined.slice(0, 10));
+        setWizardCustomerSelectedIndex(combined.length > 0 ? 0 : -1);
+      } else {
+        setWizardCustomerResults(results);
+        setWizardCustomerSelectedIndex(results.length > 0 ? 0 : -1);
+      }
     } else {
       setWizardCustomerResults([]);
       setWizardCustomerSelectedIndex(-1);
@@ -1065,20 +1088,23 @@ const currentCart = cartRef.current;
         setWizardCustomerSelectedIndex(prev => (prev > 0 ? prev - 1 : prev));
       } else if (e.key === 'Enter' && wizardCustomerSelectedIndex >= 0) {
         e.preventDefault();
+        if (wizardLockEnter) return; // Evitar doble ejecución
         selectCustomerFromWizard(wizardCustomerResults[wizardCustomerSelectedIndex]);
       }
     }
   };
 
   const selectCustomerFromWizard = async (customer) => {
+    // Bloqueo de seguridad para evitar cierres accidentales con el mismo Enter
+    setWizardLockEnter(true);
     await selectCustomer(customer);
-    // Usar un pequeño delay para evitar que el Enter que selecciona al cliente
-    // se propague y sea capturado por el listener global para finalizar la venta
+    
     setTimeout(() => {
       setWizardStep('method');
       // Proceder con el pago una vez seleccionado el cliente
       addWizardPayment('Cta Cte');
-    }, 150);
+      setWizardLockEnter(false);
+    }, 300);
   };
 
   const handleWeightSubmit = (e) => {
@@ -1235,10 +1261,11 @@ const currentCart = cartRef.current;
 
   const handleCustomerSearch = async (term) => {
     setCustomerSearch(term);
-    if (term.length > 2) {
+    if (term.length >= 1) {
       const results = await db.customers
-        .filter(c => c.name.toLowerCase().includes(term.toLowerCase()))
-        .limit(5)
+        .where('name')
+        .startsWithIgnoreCase(term)
+        .limit(10)
         .toArray();
       setCustomerResults(results);
       setCustomerSelectedIndex(results.length > 0 ? 0 : -1);
@@ -1318,23 +1345,27 @@ const currentCart = cartRef.current;
 
     axios.get('/api/customers', { headers: { Authorization: `Bearer ${token}` } })
       .then(res => {
-        setCustomers(res.data);
         syncCustomers(res.data);
         
-        // Si estábamos esperando el teléfono para enviar WhatsApp
+        // Mantener solo el seleccionado y el default en el estado para eficiencia
+        const defaultCustomer = res.data.find(c => c.name.toLowerCase().includes('cons. final'));
+        const currentSelected = selectedCustomerRef.current;
+        const stateCustomers = [];
+        if (defaultCustomer) stateCustomers.push(defaultCustomer);
+        if (currentSelected && currentSelected.id !== defaultCustomer?.id) {
+          const updatedSelected = res.data.find(c => c.id === currentSelected.id);
+          if (updatedSelected) {
+            stateCustomers.push(updatedSelected);
+            setSelectedCustomer(updatedSelected);
+          }
+        }
+        setCustomers(stateCustomers);
         if (customerToEdit && pendingWhatsAppSale) {
           const updated = res.data.find(c => c.id === customerToEdit.id);
           if (updated && updated.phone) {
             shareTicketViaWhatsApp({ ...pendingWhatsAppSale, customer_phone: updated.phone });
             setPendingWhatsAppSale(null);
           }
-        }
-        
-        // Actualizar el cliente seleccionado si fue el que se editó
-        const currentSelected = selectedCustomerRef.current;
-        if (currentSelected) {
-          const updated = res.data.find(c => c.id === currentSelected.id);
-          if (updated) setSelectedCustomer(updated);
         }
         
         setCustomerToEdit(null);
@@ -2509,8 +2540,8 @@ const currentCart = cartRef.current;
                       {creditToApply > 0 && (
                         <>
                           <div className="d-flex justify-content-between align-items-center mb-1">
-                            <span className="text-light opacity-75">Crédito del Cliente</span>
-                            <span className="text-success fw-bold">+${creditToApply.toFixed(2)}</span>
+                            <span className="text-light opacity-75">Crédito a Favor (Usado)</span>
+                            <span className="text-success fw-bold">-${creditToApply.toFixed(2)}</span>
                           </div>
                           <div className="d-flex justify-content-between align-items-center mt-2 pt-2 border-top border-secondary border-opacity-25">
                             <span className="text-info fw-bold">Cobertura Total</span>

@@ -58,10 +58,10 @@ const CustomerAccount = () => {
     }
   };
 
-  const fetchCustomers = async () => {
+  const fetchCustomers = async (search = '') => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/customer-accounts/balances', {
+      const response = await axios.get(`/api/customer-accounts/balances?search=${search}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setCustomers(response.data.customers);
@@ -307,9 +307,9 @@ const CustomerAccount = () => {
     }
   };
 
-  const filteredCustomers = customers.filter(c =>
-    c.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCustomers = customers; // Vienen filtrados del backend
+
+
 
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -359,9 +359,17 @@ const CustomerAccount = () => {
                     placeholder="Buscar cliente..."
                     value={searchTerm}
                     onChange={(e) => {
-                      setSearchTerm(e.target.value);
+                      const term = e.target.value;
+                      setSearchTerm(term);
                       setCustomerSelectedIndex(0);
+                      if (term.length >= 3 || term.length === 0) {
+                        fetchCustomers(term);
+                      }
                     }}
+
+
+
+
                     onKeyDown={(e) => {
                       if (e.key === 'ArrowDown') {
                         e.preventDefault();
