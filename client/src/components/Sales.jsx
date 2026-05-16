@@ -560,6 +560,17 @@ const Sales = () => {
       const currentCart = cartRef.current;
       const currentSplits = paymentSplitsRef.current;
       const currentDiscount = cashDiscountPercentRef.current;
+
+      // Permitir cambiar cliente en cualquier momento del wizard con F4
+      if (e.key === 'F4') {
+        e.preventDefault();
+        setWizardCustomerSearch('');
+        setWizardCustomerResults([]);
+        setWizardCustomerSelectedIndex(0);
+        setWizardStep('customer');
+        setTimeout(() => wizardCustomerInputRef.current?.focus(), 50);
+        return;
+      }
       
       // Calcular totales actuales usando los mismos métodos que el renderizado
       const subtotalVal = calculateTotal(currentCart);
@@ -1100,9 +1111,9 @@ const currentCart = cartRef.current;
     await selectCustomer(customer);
     
     setTimeout(() => {
+      // Volver al paso de métodos para que el usuario elija cómo pagar
+      // (No asignamos Cta Cte automáticamente como antes)
       setWizardStep('method');
-      // Proceder con el pago una vez seleccionado el cliente
-      addWizardPayment('Cta Cte');
       setWizardLockEnter(false);
     }, 300);
   };
@@ -2489,7 +2500,7 @@ const currentCart = cartRef.current;
                         setTimeout(() => wizardCustomerInputRef.current?.focus(), 50);
                       }}
                     >
-                      Cambiar
+                      Cambiar <small className="opacity-75">(F4)</small>
                     </Button>
                   </div>
                 </div>
