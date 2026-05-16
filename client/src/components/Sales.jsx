@@ -1111,9 +1111,8 @@ const currentCart = cartRef.current;
     await selectCustomer(customer);
     
     setTimeout(() => {
-      // Volver al paso de métodos para que el usuario elija cómo pagar
-      // (No asignamos Cta Cte automáticamente como antes)
-      setWizardStep('method');
+      // Ir al paso de monto para que el usuario elija cuánto asignar (especialmente si quiere pagar solo parte en Cta Cte)
+      setWizardStep('amount');
       setWizardLockEnter(false);
     }, 300);
   };
