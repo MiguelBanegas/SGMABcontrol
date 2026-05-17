@@ -49,5 +49,20 @@ server/spooler/temp/*.html
 server/backups/
 temp_sqlite/
 temp_backup_extract/
+backup_extracted/
 server/product_record.json
 start-ngrok.bat
+
+# Root/local dumps, archives and logs
+*.sql
+*.dump
+*.zip
+*_output.txt
+bore_output.txt
+lt_output.txt
+pinggy_new.txt
+serveo_output.txt
+tunnel_output.txt
+
+# Spooler transient processing files
+server/spooler/processing/
