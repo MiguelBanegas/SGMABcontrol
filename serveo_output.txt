@@ -1,5 +1,0 @@
-Pseudo-terminal will not be allocated because stdin is not a terminal.
-Warning: Permanently added 'serveo.net' (RSA) to the list of known hosts.
-[32mForwarding HTTP traffic from https://ca0f69b482954ebb-179-38-2-89.serveousercontent.com
-[0m
-Connection to serveo.net closed by remote host.
