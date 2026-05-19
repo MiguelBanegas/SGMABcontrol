@@ -1,8 +1,7 @@
-const { migrate } = require("../migrate_backup");
-
 exports.runMigration = async (req, res) => {
   try {
     console.log("Iniciando migración desde API...");
+    const { migrate } = require("../migrate_backup");
 
     // Ejecutar migración con callback de progreso
     const result = await migrate((message, percentage) => {
@@ -25,6 +24,13 @@ exports.runMigration = async (req, res) => {
     }
   } catch (error) {
     console.error("Error en runMigration:", error);
+    if (error.code === "MODULE_NOT_FOUND" && /sqlite3/.test(error.message)) {
+      return res.status(500).json({
+        success: false,
+        error:
+          "sqlite3 no está instalado. Instálalo para ejecutar migraciones desde backup SQLite.",
+      });
+    }
     res.status(500).json({
       success: false,
       error: error.message,

@@ -31,11 +31,11 @@ Para que las terminales no pierdan la conexión, la notebook debe tener siempre 
 Ejecute estos pasos en la terminal dentro de la carpeta del proyecto:
 
 1. Instalar PM2 globalmente (si no lo tiene):
-   `npm install -g pm2`
+   `pnpm add -g pm2`
 
 2. Construir el Frontend (Client):
    `cd client`
-   `npm run build`
+   `pnpm build`
    `cd ..`
 
 3. Iniciar el servidor con PM2:
@@ -44,5 +44,5 @@ Ejecute estos pasos en la terminal dentro de la carpeta del proyecto:
    `pm2 save`
 
 4. Configurar para que PM2 inicie con Windows:
-   `npm install -g pm2-windows-startup`
+   `pnpm add -g pm2-windows-startup`
    `pm2-startup install`

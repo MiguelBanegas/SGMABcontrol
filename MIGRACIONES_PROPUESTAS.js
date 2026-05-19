@@ -97,10 +97,10 @@ ANTES DE EJECUTAR LAS MIGRACIONES:
    - O reasignar contenedores a otro cliente
 
 3. Ejecutar migraciones:
-   npm run migrate:latest
+   pnpm migrate:prod
 
 4. Si algo sale mal, revertir:
-   npm run migrate:rollback
+   pnpm knex migrate:rollback
 
 5. Verificar nuevamente:
    node server/scripts/check_delete_customer_consistency.js

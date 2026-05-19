@@ -5,7 +5,7 @@ Write-Host "--- Iniciando proceso de generacion del APK ---" -ForegroundColor Cy
 
 # 1. Build Vite
 Write-Host "[1/3] Compilando Frontend (Vite)..." -ForegroundColor Yellow
-npm run build
+pnpm build
 if ($LASTEXITCODE -ne 0) { Write-Error "Fallo la compilacion de Vite"; exit $LASTEXITCODE }
 
 # 2. Capacitor Sync
