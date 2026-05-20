@@ -6,7 +6,7 @@ set -euo pipefail
 
 BRANCH="${BRANCH:-master}"
 PM2_APP="${PM2_APP:-sgm-backend}"
-HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:5066}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:5051}"
 
 echo "[deploy] Iniciando despliegue..."
 echo "[deploy] Branch: ${BRANCH}"
