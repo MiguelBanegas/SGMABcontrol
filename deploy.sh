@@ -4,7 +4,7 @@ set -euo pipefail
 # Script de Despliegue Automático para SGMABcontrol
 # Ejecutar desde la raíz del repo en el VPS: /var/www/SGMABcontrol
 
-BRANCH="${BRANCH:-main}"
+BRANCH="${BRANCH:-master}"
 PM2_APP="${PM2_APP:-sgm-backend}"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:5066}"
 
