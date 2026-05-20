@@ -1,45 +1,63 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Script de Despliegue Automático para SGMABcontrol
-# Ubicación recomendada: /var/www/SGMABcontrol/deploy.sh
+# Ejecutar desde la raíz del repo en el VPS: /var/www/SGMABcontrol
 
-echo "🚀 Iniciando despliegue de SGMABcontrol..."
+BRANCH="${BRANCH:-main}"
+PM2_APP="${PM2_APP:-sgm-backend}"
+HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:5066}"
 
-# 1. Obtener los últimos cambios de GitHub
-echo "📥 Tirando cambios desde el repositorio (master)..."
-# Guardamos cambios locales (como permisos o ediciones accidentales) para evitar conflictos
-git stash
-git pull origin master
-# Autocuración: Asegurar que el script mantenga permisos de ejecución para la próxima vez
+echo "[deploy] Iniciando despliegue..."
+echo "[deploy] Branch: ${BRANCH}"
+
+if [[ ! -f "pnpm-lock.yaml" ]]; then
+  echo "[deploy] ERROR: No se encontró pnpm-lock.yaml en la raíz del proyecto."
+  exit 1
+fi
+
+echo "[deploy] Versiones:"
+node -v
+pnpm -v
+
+echo "[deploy] Actualizando código desde origin/${BRANCH}..."
+git fetch --all --prune
+git checkout "${BRANCH}"
+git pull --ff-only origin "${BRANCH}"
 chmod +x deploy.sh
-echo "📝 Último commit aplicado:"
-git log -1 --pretty=format:"%C(yellow)%h%C(reset) %s %C(blue)(%an, %ar)%C(reset)"
+echo "[deploy] Último commit aplicado:"
+git log -1 --pretty=format:"%h %s (%an, %ar)"
 echo ""
 
-# 2. Configurar el Backend
-echo "⚙️  Configurando Backend..."
+echo "[deploy] Instalando dependencias backend..."
 cd server
-npm install
-# Asegurar que las dependencias estén actualizadas y sin vulnerabilidades críticas
-npm audit fix --quiet
-npm run migrate:prod
+pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+pnpm run migrate:prod
 
-# 3. Configurar y Compilar el Frontend
-echo "💻 Compilando Frontend (React)..."
+echo "[deploy] Instalando dependencias frontend..."
 cd ../client
-npm install
-npm audit fix --quiet
-npm run build
+pnpm install --frozen-lockfile || pnpm install --no-frozen-lockfile
+pnpm run build
 
-# 4. Reiniciar los procesos en PM2
-echo "🔄 Reiniciando servidores en PM2..."
+echo "[deploy] Reiniciando backend con PM2..."
 cd ..
-pm2 restart sgm-backend
+if pm2 describe "${PM2_APP}" >/dev/null 2>&1; then
+  pm2 reload "${PM2_APP}"
+else
+  pm2 start server/index.js --name "${PM2_APP}"
+fi
+pm2 save
 
-# 5. Limpieza (opcional)
-# echo "🧹 Limpiando archivos temporales..."
+echo "[deploy] Verificando healthcheck en ${HEALTH_URL}..."
+if curl -fsS "${HEALTH_URL}" >/dev/null; then
+  echo "[deploy] Healthcheck OK"
+else
+  echo "[deploy] ERROR: Healthcheck falló en ${HEALTH_URL}"
+  pm2 logs "${PM2_APP}" --lines 80
+  exit 1
+fi
 
 echo "-------------------------------------------"
-echo "✅ ¡Despliegue completado con éxito! ✨"
-echo "🌐 URL: https://sgm.mabcontrol.ar"
+echo "[deploy] Despliegue completado."
+echo "[deploy] URL: https://sgm.mabcontrol.ar"
 echo "-------------------------------------------"
