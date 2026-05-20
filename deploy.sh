@@ -11,8 +11,13 @@ HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:5066}"
 echo "[deploy] Iniciando despliegue..."
 echo "[deploy] Branch: ${BRANCH}"
 
-if [[ ! -f "pnpm-lock.yaml" ]]; then
-  echo "[deploy] ERROR: No se encontró pnpm-lock.yaml en la raíz del proyecto."
+if [[ ! -f "server/pnpm-lock.yaml" ]]; then
+  echo "[deploy] ERROR: No se encontró server/pnpm-lock.yaml."
+  exit 1
+fi
+
+if [[ ! -f "client/pnpm-lock.yaml" ]]; then
+  echo "[deploy] ERROR: No se encontró client/pnpm-lock.yaml."
   exit 1
 fi
 
